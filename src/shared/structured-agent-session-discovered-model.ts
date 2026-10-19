@@ -55,6 +55,7 @@ export function discoveredModel(
   return {
     id: model.id,
     label: model.label,
+    ...(model.provider ? { provider: model.provider } : {}),
     ...(model.description ? { description: model.description } : {}),
     ...(model.isDefault ? { isDefault: true } : {}),
     ...(model.supportsAutoMode !== undefined ? { supportsAutoMode: model.supportsAutoMode } : {}),

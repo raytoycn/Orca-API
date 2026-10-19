@@ -20,7 +20,7 @@ index 11a5e71..1b2e74b 100644
            ],
 -          "include_dirs": [],
 +          "include_dirs": ["deps/node-addon-api"],
-+          "defines": ["NAPI_CPP_EXCEPTIONS", "_HAS_EXCEPTIONS=1"],
++          "defines": ["NAPI_CPP_EXCEPTIONS", "_HAS_EXCEPTIONS=1", "NODE_ADDON_API_DISABLE_DEPRECATED"],
            "libraries": [ 'psapi.lib' ],
 -          "msvs_configuration_attributes": {
 -            "SpectreMitigation": "Spectre"

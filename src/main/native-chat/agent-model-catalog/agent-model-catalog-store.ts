@@ -10,6 +10,7 @@ import {
   type AgentModelCatalogSource,
   type AgentModelCatalogSuccess
 } from './agent-model-catalog-entry'
+import { pruneAgentModelCatalogEntries } from './agent-model-catalog-prune'
 
 export type {
   AgentModelCatalogEntry,
@@ -165,6 +166,18 @@ export class AgentModelCatalogStore {
       }
     }
     this.failures.expireAgent(agent)
+  }
+
+  /** Removes cached model rows whose source configuration no longer exists. */
+  pruneAgentModels(agent: string, keepModelId: (modelId: string) => boolean): void {
+    pruneAgentModelCatalogEntries({
+      entries: this.entries,
+      dueEntries: this.dueEntries,
+      notify: (fingerprint) => this.listingWaiters.notify(fingerprint),
+      save: (entries) => this.persistence?.save(entries),
+      agent,
+      keepModelId
+    })
   }
 
   /** The one ingestion step every listing goes through, whoever listed it. */

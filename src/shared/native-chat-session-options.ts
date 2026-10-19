@@ -3,6 +3,7 @@ import type { AgentType } from './agent-status-types'
 export type SessionOptionValue = string | boolean
 
 export type SessionOptionSelectChoice = {
+  provider?: { id: string; label: string }
   value: string
   label: string
   description?: string

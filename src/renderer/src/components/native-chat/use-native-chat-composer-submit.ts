@@ -44,8 +44,19 @@ export function useNativeChatComposerSubmit(args: {
   sendStructured: (text: string, attachments: readonly NativeChatComposerImageAttachment[]) => void
   setDraft: (value: string) => void
   setCaret: (caret: number) => void
+  /** Returns the text to send, or null to hold the submit. */
+  outgoingPrompt?: (draft: string) => string | null
 }): { send: () => void; goalMode: NativeChatComposerGoalMode } {
-  const { caret, disabled, draft, draftScopeKey, imageAttachments, sendPty, sendStructured } = args
+  const {
+    caret,
+    disabled,
+    draft,
+    draftScopeKey,
+    imageAttachments,
+    outgoingPrompt,
+    sendPty,
+    sendStructured
+  } = args
   const { setCaret, setDraft, structuredTransport } = args
   const threadGoal = structuredTransport?.threadGoal
   const [entered, setEntered] = useState(false)
@@ -105,6 +116,10 @@ export function useNativeChatComposerSubmit(args: {
     if (nativeChatImagesHoldSend(imageAttachments)) {
       return
     }
+    const outgoing = active ? draft : (outgoingPrompt?.(draft) ?? draft)
+    if (outgoing === null) {
+      return
+    }
     if (threadGoal && structuredTransport && isBareStructuredAgentSessionGoalCommand(draft)) {
       // Same entrance as picking `/goal`: the token becomes the chip. Typed inside
       // goal mode it is still the entrance, never an objective.
@@ -118,13 +133,14 @@ export function useNativeChatComposerSubmit(args: {
     } else if (!structuredTransport) {
       sendPty()
     } else if ((draft.trim() !== '' || imageAttachments.length > 0) && !disabled) {
-      sendStructured(draft, imageAttachments)
+      sendStructured(outgoing, imageAttachments)
     }
   }, [
     active,
     disabled,
     draft,
     imageAttachments,
+    outgoingPrompt,
     sendPty,
     sendStructured,
     setCaret,

@@ -31,6 +31,10 @@ import {
 } from './agent-availability-settings'
 import { AgentAvailabilityControl } from './AgentCatalogRow'
 import { AgentLaunchSettingsSection } from './AgentLaunchSettingsSection'
+import { OrcaAgentCollaborationEditor } from './OrcaAgentCollaborationEditor'
+import { defaultOrcaAgentCollaborationSettings } from '../../../../shared/orca-agent-collaboration'
+import { summarizeAgentApiPresets } from '../../../../shared/agent-api-presets'
+import { isOrcaAgentBridgeableApiPreset } from '../../../../shared/agent-api-model-catalog'
 import type { SettingsHostScope } from './settings-host-scope'
 
 export {
@@ -137,8 +141,18 @@ export function AgentsPane({
   wslCapabilitiesLoading
 }: AgentsPaneProps): React.JSX.Element {
   const refreshLocalAgents = useAppStore((state) => state.refreshDetectedAgents)
+  const orcaAgentPresets = summarizeAgentApiPresets(settings.agentApiPresets ?? []).filter(
+    isOrcaAgentBridgeableApiPreset
+  )
   return (
     <div className="space-y-8">
+      <OrcaAgentCollaborationEditor
+        presets={orcaAgentPresets}
+        settings={settings.orcaAgentCollaboration ?? defaultOrcaAgentCollaborationSettings()}
+        onChange={(collaboration) => {
+          void updateSettings({ orcaAgentCollaboration: collaboration })
+        }}
+      />
       <AgentLaunchSettingsSection
         settings={settings}
         updateSettings={updateSettings}

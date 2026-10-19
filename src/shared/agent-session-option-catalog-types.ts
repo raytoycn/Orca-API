@@ -45,6 +45,7 @@ export type CatalogOption = {
 }
 
 export type CatalogModel = {
+  provider?: { id: string; label: string }
   id: string
   label: string
   description?: string

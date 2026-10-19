@@ -44,6 +44,19 @@ export function NativeChatModelCombobox({
 }: NativeChatModelComboboxProps): React.JSX.Element {
   const searchLabel = translate('components.native-chat.composer.searchModels', 'Search models…')
   const search = useRef<HTMLInputElement>(null)
+  const groups = new Map<
+    string,
+    { provider?: SessionOptionSelectChoice['provider']; choices: SessionOptionSelectChoice[] }
+  >()
+  for (const choice of choices) {
+    const key = choice.provider?.id ?? ''
+    const group = groups.get(key)
+    if (group) {
+      group.choices.push(choice)
+    } else {
+      groups.set(key, { provider: choice.provider, choices: [choice] })
+    }
+  }
   return (
     <Command
       surface="inline"
@@ -75,37 +88,39 @@ export function NativeChatModelCombobox({
           )}
         </CommandEmpty>
         <NativeChatSessionOptionWriteGroup busy={busy}>
-          <CommandGroup>
-            {choices.map((choice) => {
-              const label = nativeChatSessionChoiceLabel(choice)
-              const current = choice.value === currentValue
-              return (
-                <CommandItem
-                  key={choice.value}
-                  value={choice.value}
-                  keywords={[label, choice.description ?? '']}
-                  selection="palette"
-                  disabled={readOnly}
-                  aria-current={current || undefined}
-                  onSelect={() => {
-                    if (!current) {
-                      onSelect(choice.value)
-                    }
-                  }}
-                >
-                  <NativeChatSessionOptionChoiceBody
-                    label={label}
-                    description={choice.description}
-                  />
-                  {/* Why always there: a row that gains the check must not re-wrap its text while
+          {[...groups.entries()].map(([id, group]) => (
+            <CommandGroup key={id} heading={group.provider?.label}>
+              {group.choices.map((choice) => {
+                const label = nativeChatSessionChoiceLabel(choice)
+                const current = choice.value === currentValue
+                return (
+                  <CommandItem
+                    key={choice.value}
+                    value={choice.value}
+                    keywords={[label, choice.description ?? '', group.provider?.label ?? '']}
+                    selection="palette"
+                    disabled={readOnly}
+                    aria-current={current || undefined}
+                    onSelect={() => {
+                      if (!current) {
+                        onSelect(choice.value)
+                      }
+                    }}
+                  >
+                    <NativeChatSessionOptionChoiceBody
+                      label={label}
+                      description={choice.description}
+                    />
+                    {/* Why always there: a row that gains the check must not re-wrap its text while
                     the picker is open. */}
-                  <span className="ml-auto flex size-3.5 shrink-0 items-center justify-center">
-                    {current ? <Check className="size-3.5 text-muted-foreground" /> : null}
-                  </span>
-                </CommandItem>
-              )
-            })}
-          </CommandGroup>
+                    <span className="ml-auto flex size-3.5 shrink-0 items-center justify-center">
+                      {current ? <Check className="size-3.5 text-muted-foreground" /> : null}
+                    </span>
+                  </CommandItem>
+                )
+              })}
+            </CommandGroup>
+          ))}
         </NativeChatSessionOptionWriteGroup>
       </CommandList>
     </Command>

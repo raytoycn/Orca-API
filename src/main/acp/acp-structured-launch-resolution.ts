@@ -231,6 +231,7 @@ export function acpStructuredLaunchPart(
         dataDirectory: deps.dataDirectory
       }
     )
+    env.ORCA_CHAT_PERMISSION_MODE = basis.permissionMode ?? 'ask'
     const cwd = await basis.launchDirectory()
     const visuals = spec.visualsSkill ? await basis.visuals() : null
     // Again at every launch: the binary on PATH may have changed since the chat was created.

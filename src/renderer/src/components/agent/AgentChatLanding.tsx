@@ -19,8 +19,16 @@ import { newAgentLaunchRequestId } from '@/lib/agent-launch-request-id'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { AgentApiAgent } from '../../../../shared/agent-api-connection-schema'
 import { AgentApiModelsRequest, type AgentApiModel } from '../../../../shared/agent-api-models'
+import { isOrcaAgentBridgeableApiPreset } from '../../../../shared/agent-api-model-catalog'
+import { uniqueOrcaAgentApiPresets } from '../../../../shared/agent-api-model-catalog'
 import { DEFAULT_API_CONTEXT_WINDOW } from '../../../../shared/agent-api-presets'
 import type { TuiAgent } from '../../../../shared/tui-agent'
+import {
+  defaultOrcaAgentCollaborationSettings,
+  isOrcaCollaborationReady,
+  orcaCollaborationPrompt,
+  type OrcaAgentCollaborationSettings
+} from '../../../../shared/orca-agent-collaboration'
 
 export function AgentChatLanding({
   onChatStarted
@@ -37,11 +45,16 @@ export function AgentChatLanding({
   const [modelsFailed, setModelsFailed] = useState(false)
   const [modelRefresh, setModelRefresh] = useState(0)
   const [sending, setSending] = useState(false)
+  const [collaborationMode, setCollaborationMode] =
+    useState<OrcaAgentCollaborationSettings['mode']>('single')
   const { worktrees, repos } = useAppStore(
     useShallow((s) => ({ worktrees: s.worktreesByRepo, repos: s.repos }))
   )
   const disabled = useAppStore((s) => s.settings?.disabledTuiAgents)
   const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
+  const collaborationSettings =
+    settings?.orcaAgentCollaboration ?? defaultOrcaAgentCollaborationSettings()
   const openModal = useAppStore((s) => s.openModal)
   const choices = repos.flatMap((repo) =>
     (worktrees[repo.id] ?? []).map((tree) => ({
@@ -55,7 +68,12 @@ export function AgentChatLanding({
   const parsedApiAgent = AgentApiAgent.safeParse(agent)
   const apiAgent = parsedApiAgent.success ? parsedApiAgent.data : null
   const presets = useMemo(
-    () => (settings?.agentApiPresets ?? []).filter((preset) => preset.connection.agent === agent),
+    () =>
+      agent === 'orca-agent'
+        ? uniqueOrcaAgentApiPresets(
+            (settings?.agentApiPresets ?? []).filter(isOrcaAgentBridgeableApiPreset)
+          )
+        : (settings?.agentApiPresets ?? []).filter((preset) => preset.connection.agent === agent),
     [settings?.agentApiPresets, agent]
   )
   const activePresetId = apiAgent ? settings?.activeAgentApiPresets?.[apiAgent] : undefined
@@ -75,6 +93,11 @@ export function AgentChatLanding({
     setModelsLoading(false)
     setModelsFailed(false)
   }, [agent])
+  useEffect(() => {
+    if (agent === 'orca-agent') {
+      setCollaborationMode(collaborationSettings.mode)
+    }
+  }, [agent, collaborationSettings.mode])
   useEffect(() => {
     let current = true
     setApiModels(selectedPreset?.models ?? [])
@@ -173,11 +196,22 @@ export function AgentChatLanding({
     }
     setSending(true)
     try {
+      let outgoingPrompt = prompt.trim()
+      if (agent === 'orca-agent' && collaborationMode === 'multi-role') {
+        const selectedSettings: OrcaAgentCollaborationSettings = {
+          ...collaborationSettings,
+          mode: 'multi-role'
+        }
+        if (!isOrcaCollaborationReady(selectedSettings)) {
+          throw new Error('多角色协同尚未配置完整，请先在 Orca Agent 中为每个角色选择模型。')
+        }
+        outgoingPrompt = orcaCollaborationPrompt(outgoingPrompt, selectedSettings)
+      }
       const result = launchAgentInNewTab({
         agent,
         worktreeId: target,
         requestId: newAgentLaunchRequestId(),
-        prompt: prompt.trim(),
+        prompt: outgoingPrompt,
         promptDelivery: 'auto-submit',
         activate: false
       })
@@ -246,7 +280,11 @@ export function AgentChatLanding({
               <SelectContent>
                 {modelOptions.map(({ key, preset, model }) => (
                   <SelectItem key={key} value={key}>
-                    {`${model.name || model.id} · ${preset.name}`}
+                    {`${model.name || model.id} · ${preset.name}${
+                      preset.connection.agent === 'orca-agent'
+                        ? ''
+                        : ` · ${preset.connection.agent}`
+                    }`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -262,6 +300,40 @@ export function AgentChatLanding({
               >
                 <RefreshCw className="size-4" />
               </Button>
+            )}
+          </>
+        )}
+        {agent === 'orca-agent' && (
+          <>
+            <select
+              aria-label="运行方式"
+              className="h-9 min-w-0 w-full rounded-md border border-input bg-background px-2 text-sm"
+              value={collaborationMode}
+              onChange={(event) =>
+                setCollaborationMode(event.target.value === 'multi-role' ? 'multi-role' : 'single')
+              }
+            >
+              <option value="single">单 Agent</option>
+              <option value="multi-role">多角色协同</option>
+            </select>
+            {collaborationMode === 'single' && (
+              <select
+                aria-label="思考模式"
+                className="h-9 min-w-0 w-full rounded-md border border-input bg-background px-2 text-sm"
+                value={collaborationSettings.singleEffort}
+                onChange={(event) => {
+                  const effort = event.target
+                    .value as OrcaAgentCollaborationSettings['singleEffort']
+                  void updateSettings({
+                    orcaAgentCollaboration: { ...collaborationSettings, singleEffort: effort }
+                  })
+                }}
+              >
+                <option value="off">off</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
             )}
           </>
         )}
@@ -288,6 +360,15 @@ export function AgentChatLanding({
           {sending ? '启动中' : '发送'}
         </Button>
       </div>
+      {agent === 'orca-agent' && collaborationMode === 'multi-role' && (
+        <p className="text-xs text-muted-foreground">
+          协同角色：{collaborationSettings.roles.map((role) => role.name).join('、')} ·{' '}
+          {collaborationSettings.roles.find(
+            (role) => role.id === collaborationSettings.coordinatorRoleId
+          )?.name ?? collaborationSettings.roles[0]?.name}{' '}
+          统筹
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         使用该智能体已配置的模型和 API。Enter 发送，Shift+Enter 换行。
       </p>

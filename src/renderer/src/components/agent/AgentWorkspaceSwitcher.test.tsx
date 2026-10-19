@@ -2,6 +2,7 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tab } from '../../../../shared/tab-types'
+import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import {
   AgentWorkspaceSwitcher,
@@ -102,19 +103,24 @@ describe('workspace Agent switcher', () => {
   it('starts Orca Agent chat instead of reopening a stale terminal tab', () => {
     const actions = controller()
     actions.tabsByWorktree = {
-      workspace: [{
-        id: 'old-orca-terminal',
-        entityId: 'terminal-one',
-        groupId: 'group',
-        worktreeId: 'workspace',
-        contentType: 'terminal',
-        label: 'Orca Agent',
-        customLabel: null,
-        color: null,
-        sortOrder: 0,
-        createdAt: 1,
-        launchAgent: 'orca-agent'
-      } as Tab]
+      workspace: [
+        {
+          id: 'old-orca-terminal',
+          entityId: 'terminal-one',
+          groupId: 'group',
+          worktreeId: 'workspace',
+          contentType: 'terminal',
+          label: 'Orca Agent',
+          ptyId: null,
+          title: 'Orca Agent',
+          customTitle: null,
+          customLabel: null,
+          color: null,
+          sortOrder: 0,
+          createdAt: 1,
+          launchAgent: 'orca-agent'
+        } as TerminalTab
+      ]
     }
     render(<AgentWorkspaceSwitcher controller={actions} />)
     fireEvent.click(screen.getByRole('button', { name: 'orca-agent' }))

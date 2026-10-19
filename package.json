@@ -1,6 +1,6 @@
 {
   "name": "orca",
-  "version": "1.4.214",
+  "version": "1.4.216",
   "description": "Next-gen IDE for parallel agentic development",
   "homepage": "https://github.com/stablyai/orca",
   "author": "stablyai",
@@ -125,7 +125,7 @@
     "reclaim-space": "node config/scripts/reclaim-worktree-space.mjs",
     "rebuild:node": "pnpm rebuild node-pty",
     "build:unpack": "pnpm run build && pnpm run ensure:electron-runtime && electron-builder --config config/electron-builder.config.cjs --dir",
-    "build:win": "pnpm run build:desktop && pnpm run ensure:electron-runtime && electron-builder --config config/electron-builder.config.cjs --win",
+    "build:win": "node config/scripts/build-orca-api-windows.mjs",
     "build:win:api": "node config/scripts/build-orca-api-windows.mjs",
     "build:icons": "bash resources/icon-source/generate.sh",
     "build:mac": "pnpm run build:desktop && pnpm run build:computer-macos && pnpm run build:keyboard-layout-macos && pnpm run build:notification-status-macos && pnpm run ensure:electron-runtime && node config/scripts/build-mac-local.mjs",

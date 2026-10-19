@@ -1,26 +1,21 @@
+import { projectRuntimeClientSettings } from './runtime-client-settings-projection'
 import { getAppEnvironment } from '../../shared/app-environment'
-import { prepareAgentApiCatalogEnvironment } from './agent-api-catalog-environment'
-import { resolveAgentApiPresetMutation } from './agent-api-preset-mutation'
+import {
+  prepareAgentApiMutationEnvironment,
+  verifyPreparedAgentApiMutation
+} from './agent-api-catalog-environment'
 import type { AgentApiModelsRequest } from '../../shared/agent-api-models'
-import { discoverSavedAgentApiModels } from './agent-api-model-discovery'
+import { listAndCacheAgentApiModels } from './agent-api-model-catalog-refresh'
 import { applyAgentApiNativeConfiguration } from './agent-api-native-configuration'
-import { agentApiCatalogConnections } from '../../shared/agent-api-model-catalog'
-import { isArtifactSharingEnabled } from '../../shared/artifact-sharing-gate'
-import { isAgentSkillSharingEnabled } from '../../shared/agent-skill-sharing-gate'
 import { applyPRBotAuthorOverride } from '../../shared/pr-bot-author-overrides'
-import { TASK_PROVIDERS } from '../../shared/task-providers'
 import {
   applyTerminalQuickCommandMutation,
   MAX_QUICK_COMMANDS,
   type TerminalQuickCommandMutation
 } from '../../shared/terminal-quick-commands'
 import { haveSameDisabledTuiAgents } from '../../shared/tui-agent-selection'
-import { normalizeSourceControlAiSettings } from '../../shared/source-control-ai'
-import { SOURCE_CONTROL_LAUNCH_ACTION_IDS } from '../../shared/source-control-ai-actions'
-import type { GlobalSettings } from '../../shared/global-settings-types'
 import { applyNativeChatSessionOptionSettingsMutation } from '../../shared/native-chat-session-option-defaults'
 import type { NativeChatSessionOptionSettingsMutation } from '../../shared/native-chat-session-options'
-import { getHostDisplayLabelOverrides } from '../../shared/host-setting-overrides'
 import type { TerminalQuickCommand } from '../../shared/terminal-quick-command-types'
 import { recordManagedHookInstallFailure } from '../agent-hooks/install-telemetry'
 import { applyAgentStatusHooksEnabled } from '../agent-hooks/managed-agent-hook-controls'
@@ -35,9 +30,7 @@ import {
 import { agentLaunchSettingsRollbackUpdates } from './agent-launch-settings-rollback'
 import type {
   RuntimeClientSettings,
-  RuntimeClientSettingsUpdate,
-  RuntimeClientSourceControlAi,
-  RuntimeHostDisplayLabelOverrides
+  RuntimeClientSettingsUpdate
 } from './runtime-client-settings-shape'
 
 export class RuntimeClientSettingsController {
@@ -57,54 +50,7 @@ export class RuntimeClientSettingsController {
       throw new Error('runtime_unavailable')
     }
     const settings = this.store.getSettings()
-    return {
-      defaultTuiAgent: settings.defaultTuiAgent ?? null,
-      newWorkspaceSetupOnly: false,
-      disabledTuiAgents: settings.disabledTuiAgents ?? [],
-      agentCmdOverrides: settings.agentCmdOverrides ?? {},
-      agentDefaultArgs: settings.agentDefaultArgs ?? {},
-      agentDefaultEnv: settings.agentDefaultEnv ?? {},
-      agentStatusHooksEnabled: settings.agentStatusHooksEnabled !== false,
-      // Why projected: mobile's terminal Copy honours this, and a host predating
-      // the setting sends no key, which the client reads as on (#19770).
-      terminalCopyTrimsGutter: settings.terminalCopyTrimsGutter !== false,
-      defaultTaskSource: settings.defaultTaskSource ?? 'github',
-      defaultTaskViewPreset: settings.defaultTaskViewPreset ?? 'issues',
-      visibleTaskProviders: settings.visibleTaskProviders ?? [...TASK_PROVIDERS],
-      defaultRepoSelection: settings.defaultRepoSelection ?? null,
-      // Persisted settings can violate the paired client's string-array contract.
-      defaultLinearTeamSelection: Array.isArray(settings.defaultLinearTeamSelection)
-        ? settings.defaultLinearTeamSelection.filter((id): id is string => typeof id === 'string')
-        : null,
-      githubProjects: settings.githubProjects,
-      experimentalNewWorktreeCardStyle: settings.experimentalNewWorktreeCardStyle === true,
-      experimentalNativeChat: settings.experimentalNativeChat === true,
-      // Older clients use this key to fall back to terminal-backed chat. Keep their default terminal.
-      openAgentTabsInChatByDefault: false,
-      experimentalStructuredNativeChat: settings.experimentalNativeChat === true,
-      compactWorktreeCards: settings.compactWorktreeCards === true,
-      minimaxGroupId: settings.minimaxGroupId ?? '',
-      minimaxUsageModels: settings.minimaxUsageModels ?? 'general',
-      minimaxEndpoint: settings.minimaxEndpoint ?? 'overseas',
-      zcodePlanSite: settings.zcodePlanSite ?? 'zai',
-      prBotAuthorOverrides: settings.prBotAuthorOverrides ?? [],
-      artifactSharingEnabled: isArtifactSharingEnabled(settings),
-      worktreeVisibilityDefaults: settings.worktreeVisibilityDefaults ?? { external: 'hide' },
-      agentSkillSharingEnabled: isAgentSkillSharingEnabled(settings),
-      machineName: settings.machineName ?? '',
-      // Why projected: a web client's Settings → Chat edits this host's new-chat default.
-      ...(settings.nativeChatPermissionMode
-        ? { nativeChatPermissionMode: settings.nativeChatPermissionMode }
-        : {}),
-      // Why projected: a paired client's AI buttons start these actions' agents, and must honour
-      // the agent saved for each one as the desktop does. Absent on older hosts.
-      sourceControlAi: projectSourceControlLaunchRecipes(settings),
-      hostSettingOverrides: Object.fromEntries(
-        [
-          ...getHostDisplayLabelOverrides({ hostSettingOverrides: settings.hostSettingOverrides })
-        ].map(([hostId, displayLabel]) => [hostId, { displayLabel }])
-      ) as RuntimeHostDisplayLabelOverrides
-    }
+    return projectRuntimeClientSettings(settings)
   }
 
   async update(updates: RuntimeClientSettingsUpdate): Promise<RuntimeClientSettings> {
@@ -150,8 +96,12 @@ export class RuntimeClientSettingsController {
     return projectAgentLaunchSettings(this.store.getSettings())
   }
 
-  listAgentApiModels(request: AgentApiModelsRequest) {
-    return discoverSavedAgentApiModels(this.store?.getSettings().agentApiPresets ?? [], request)
+  async listAgentApiModels(request: AgentApiModelsRequest) {
+    return listAndCacheAgentApiModels(
+      request,
+      () => this.store?.getSettings(),
+      (mutation) => this.mutateAgentLaunch(mutation)
+    )
   }
 
   async mutateAgentLaunch(mutation: AgentLaunchSettingsMutation): Promise<AgentLaunchSettings> {
@@ -161,38 +111,20 @@ export class RuntimeClientSettingsController {
     }
     const applySettings = store.updateSettings.bind(store)
     const originalMutation = mutation
-    const resolved = resolveAgentApiPresetMutation(store.getSettings(), mutation)
+    const { resolved, connections, profileEnvironment } = await prepareAgentApiMutationEnvironment(
+      store.getSettings(),
+      mutation,
+      getAppEnvironment().getPath('userData')
+    )
     mutation = resolved.mutation
-    const connections =
-      mutation.type === 'api-set'
-        ? agentApiCatalogConnections(
-            mutation.connection,
-            resolved.updates.agentApiPresets ?? store.getSettings().agentApiPresets
-          )
-        : []
-    const profileEnvironment =
-      mutation.type === 'api-set'
-        ? await prepareAgentApiCatalogEnvironment(
-            mutation.connection,
-            getAppEnvironment().getPath('userData'),
-            connections
-          )
-        : {}
     const committed = await store.runDurableMutation(() => {
       const before = store.getSettings()
-      const currentResolved = resolveAgentApiPresetMutation(before, originalMutation)
-      if (
-        JSON.stringify(currentResolved.mutation) !== JSON.stringify(mutation) ||
-        (mutation.type === 'api-set' &&
-          JSON.stringify(
-            agentApiCatalogConnections(
-              mutation.connection,
-              currentResolved.updates.agentApiPresets ?? before.agentApiPresets
-            )
-          ) !== JSON.stringify(connections))
-      ) {
-        throw new Error('API configuration changed; retry the operation')
-      }
+      const currentResolved = verifyPreparedAgentApiMutation(
+        before,
+        originalMutation,
+        mutation,
+        connections
+      )
       const updates = agentLaunchSettingsMutationUpdates(
         { ...before, ...currentResolved.updates },
         mutation,
@@ -320,22 +252,5 @@ export class RuntimeClientSettingsController {
     })
     this.reconciliationTail = reconciliation.catch(() => {})
     return reconciliation
-  }
-}
-
-function projectSourceControlLaunchRecipes(
-  settings: Partial<Pick<GlobalSettings, 'sourceControlAi' | 'commitMessageAi'>>
-): RuntimeClientSourceControlAi {
-  const { actions } = normalizeSourceControlAiSettings(
-    settings.sourceControlAi,
-    settings.commitMessageAi
-  )
-  return {
-    actions: Object.fromEntries(
-      SOURCE_CONTROL_LAUNCH_ACTION_IDS.flatMap((actionId) => {
-        const recipe = actions?.[actionId]
-        return recipe ? [[actionId, recipe]] : []
-      })
-    )
   }
 }

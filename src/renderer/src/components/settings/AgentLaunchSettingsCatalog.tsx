@@ -84,6 +84,7 @@ export function AgentLaunchSettingsCatalog({
     apiNotice: AgentApiAgent.safeParse(agent.id).success
       ? undefined
       : translate('settings.agents.api.pending', 'API adapter pending'),
+    apiButtonLabel: agent.id === 'orca-agent' ? 'API 与协同' : undefined,
     apiEditor: (() => {
       const parsed = AgentApiAgent.safeParse(agent.id)
       return parsed.success && settings.apiConfigurationAgents?.includes(parsed.data) ? (

@@ -481,4 +481,18 @@ describe('agent model catalog store', () => {
     const persistence = createAgentModelCatalogFilePersistence(directory)
     expect(await persistence.load()).toEqual([])
   })
+
+  it('prunes cached models whose source no longer exists', () => {
+    const store = new AgentModelCatalogStore()
+    store.recordSuccess('fp-orca', 'orca-agent', success('kept', 'removed'), 'discovery')
+    store.recordSuccess('fp-codex', 'codex', success('gpt-a'), 'discovery')
+
+    store.pruneAgentModels('orca-agent', (modelId) => modelId === 'kept')
+
+    expect(store.get('fp-orca')?.models.map((model) => model.id)).toEqual(['kept'])
+    expect(store.get('fp-codex')?.models.map((model) => model.id)).toEqual(['gpt-a'])
+
+    store.pruneAgentModels('orca-agent', () => false)
+    expect(store.get('fp-orca')).toBeNull()
+  })
 })

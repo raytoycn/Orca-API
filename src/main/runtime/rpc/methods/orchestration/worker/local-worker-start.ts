@@ -1,4 +1,5 @@
 import { probeWorkerOpenCodeModelLaunchSupport } from './worker-opencode-model-preflight'
+import { assertOrcaWorkerStructuredLaunch } from './orca-agent-worker-launch'
 import { resolveWorkerConfiguredAgentParams } from './worker-configured-agent-preflight'
 import { waitForWorkerAgentReady } from '../../../../launched-agent-composer-readiness'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
@@ -125,6 +126,7 @@ export async function startLocalWorker(args: {
   }
   const hostMode = resolveWorkerStartModeOnHost(runtime, args.mode, resolvedWorktree?.id, agent)
   let mode = chatWorkerMode(await hostMode, chat)
+  assertOrcaWorkerStructuredLaunch({ agent, model: launchParams.model, mode: mode.mode })
 
   const startOptions = {
     worktree: requestedWorktree,

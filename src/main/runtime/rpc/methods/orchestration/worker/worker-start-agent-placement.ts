@@ -14,6 +14,7 @@
  */
 
 import type { AgentLaunchPreferences } from '../../../../../../shared/agent-session-host-authority'
+import { assertOrcaWorkerStructuredLaunch } from './orca-agent-worker-launch'
 import type { TuiAgent } from '../../../../../../shared/tui-agent'
 import { executeAgentLaunch } from '../../../../../agent-launch/agent-launch-executor'
 import type { AgentLaunchSurfaceFactory } from '../../../../../agent-launch/agent-launch-surface-factories'
@@ -82,6 +83,11 @@ export const EXISTING_WORKTREE_SETUP: WorkerSetupReceipt = {
 export async function placeWorkerAgent(
   args: WorkerAgentPlacementArgs
 ): Promise<WorkerAgentPlacement> {
+  assertOrcaWorkerStructuredLaunch({
+    agent: args.agent,
+    model: args.launchPreferences?.model,
+    mode: args.mode.mode
+  })
   const existing = args.creationWorktree ? undefined : requireWorktree(args.resolvedWorktree)
   if (existing && args.params.terminal) {
     args.effects.push({

@@ -3,6 +3,7 @@ import { checkAgentLaunchModelPreferences } from '../../../../../../shared/agent
 import { ORCHESTRATION_WORKER_LAUNCH_PREFERENCES_RUNTIME_CAPABILITY } from '../../../../../../shared/protocol-version'
 import type { TuiAgent } from '../../../../../../shared/tui-agent'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
+import { orcaWorkerPreferences } from './orca-agent-worker-launch'
 
 export type OrchestrationWorkerLaunchSelection = {
   agent: TuiAgent | null
@@ -53,7 +54,10 @@ export function resolveWorkerLaunchPreferences(args: {
   preferences: AgentLaunchPreferences | undefined
   receipt: OrchestrationWorkerLaunchReceipt
 } {
-  const checked = checkAgentLaunchModelPreferences(args)
+  const checked =
+    args.agent === 'orca-agent' && args.model
+      ? { preferences: orcaWorkerPreferences(args.model, args.effort) }
+      : checkAgentLaunchModelPreferences(args)
   if ('refusal' in checked) {
     throw new OrchestrationError(checked.refusal.code, checked.refusal.message)
   }

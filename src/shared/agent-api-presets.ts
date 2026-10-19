@@ -1,5 +1,7 @@
 import { z } from 'zod'
+import { orcaAgentProviderId } from './orca-agent-model-id'
 import { AgentApiConnection } from './agent-api-connection-schema'
+import { AGENT_API_PROTOCOLS } from './agent-api-connection-schema'
 import { AgentApiModelCatalog, type AgentApiModel } from './agent-api-models'
 
 export const DEFAULT_API_CONTEXT_WINDOW = 1000000
@@ -18,6 +20,7 @@ export type AgentApiPreset = {
   models?: AgentApiModel[]
 }
 export type AgentApiPresetSummary = Omit<AgentApiPreset, 'connection'> & {
+  modelProviderId?: string
   connection: Omit<AgentApiPreset['connection'], 'apiKey'>
 }
 export type AgentApiPresetDraft = z.infer<typeof AgentApiPresetDraft>
@@ -29,6 +32,10 @@ export function summarizeAgentApiPresets(
     id,
     name,
     connection,
+    ...(connection.agent === 'orca-agent' ||
+    AGENT_API_PROTOCOLS['orca-agent'].includes(connection.protocol)
+      ? { modelProviderId: orcaAgentProviderId({ ...connection, apiKey: _apiKey }) }
+      : {}),
     ...(models ? { models } : {})
   }))
 }

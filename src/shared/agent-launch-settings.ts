@@ -56,6 +56,13 @@ export type AgentLaunchSettings = {
 export type AgentLaunchSettingsMutation =
   | { type: 'api-preset-save'; preset: AgentApiPresetDraft }
   | {
+      type: 'api-preset-models'
+      agent: AgentApiConnection['agent']
+      id: string
+      expectedConnection: AgentApiConnection
+      models: NonNullable<AgentApiPresetDraft['models']>
+    }
+  | {
       type: 'api-preset-activate'
       agent: AgentApiAgent
       id: string
@@ -103,6 +110,8 @@ export function agentLaunchSettingsMutationUpdates(
   platform: NodeJS.Platform
 ): AgentLaunchSettingsSource {
   switch (mutation.type) {
+    case 'api-preset-models':
+      return {}
     case 'api-preset-save':
     case 'api-preset-activate':
       throw new Error('API presets must be applied by the execution host')

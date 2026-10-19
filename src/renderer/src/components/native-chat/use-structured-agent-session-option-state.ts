@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CatalogModel } from '../../../../shared/agent-session-option-catalog-types'
 import type { AgentSessionConversationCommand } from '../../../../shared/agent-session-conversation-command'
 import type { AgentSessionOptionsResult } from '../../../../shared/agent-session-wire'
 import type { AgentSessionRewindSupport } from '../../../../shared/agent-session-rewind'
@@ -19,11 +20,20 @@ import { callStructuredAgentSession } from '@/runtime/structured-agent-session-c
 import { readHostModelCatalogSnapshot } from '@/runtime/host-model-catalog-snapshots'
 import { cloneNativeChatSessionOptionRecord } from '../../../../shared/native-chat-session-option-state'
 import { useAppStore } from '@/store'
+import { useAgentApiModelPresets } from './use-agent-api-model-presets'
 import { includeConfiguredApiModelsInSessionOptions } from '../../../../shared/agent-api-model-catalog'
+import { isOrcaAgentBridgeableApiPreset } from '../../../../shared/agent-api-model-catalog'
 import {
   createCoalescedPollRunner,
   type CoalescedPollRunner
 } from '../right-sidebar/coalesced-poll-runner'
+
+function catalogModelEfforts(
+  model: CatalogModel
+): AgentSessionOptionsResult['models'][number]['efforts'] {
+  const effort = model.options.find((entry) => entry.id === 'effort')
+  return effort?.kind.type === 'select' ? effort.kind.choices : []
+}
 
 /** The first frame: the host's saved list when the renderer already holds it, else the seed,
  *  which shows the quiet placeholder until the host answers. */
@@ -75,7 +85,8 @@ export function useStructuredAgentSessionOptionState(args: {
     turnId,
     worktree
   } = args
-  const agentApiPresets = useAppStore((state) => state.settings?.agentApiPresets)
+  const agentApiPresets = useAgentApiModelPresets(agent, identity, target)
+  const defaultPermissionMode = useAppStore((state) => state.settings?.nativeChatPermissionMode)
   const [conversationSupport, setConversationSupport] = useState<{
     sessionId: string
     commands: readonly AgentSessionConversationCommand[]
@@ -233,8 +244,54 @@ export function useStructuredAgentSessionOptionState(args: {
       state: StructuredAgentSessionOptionState,
       seed: Readonly<Record<string, string>> | undefined,
       held: Readonly<Record<string, string>>
-    ) => structuredAgentSessionOptionView(state, seed, held, takesSendOptions),
-    [takesSendOptions]
+    ) => {
+      const view = structuredAgentSessionOptionView(state, seed, held, takesSendOptions)
+      if (
+        !agentApiPresets.some((preset) =>
+          agent === 'orca-agent'
+            ? isOrcaAgentBridgeableApiPreset(preset)
+            : preset.connection.agent === agent
+        )
+      ) {
+        return view
+      }
+      const merged = includeConfiguredApiModelsInSessionOptions(
+        agent,
+        {
+          models: (view.catalog?.models ?? []).map((model) => ({
+            id: model.id,
+            label: model.label,
+            ...(model.provider ? { provider: model.provider } : {}),
+            isDefault: model.isDefault === true,
+            efforts: catalogModelEfforts(model)
+          })),
+          current: {}
+        },
+        agentApiPresets
+      )
+      if (!merged.models.length) {
+        return view
+      }
+      const existing = new Map(view.catalog?.models.map((model) => [model.id, model]) ?? [])
+      return {
+        ...view,
+        catalog: {
+          ...(view.catalog ?? { modelApply: {} }),
+          models: merged.models.map((model) => ({
+            ...(existing.get(model.id) ?? { id: model.id, options: [] }),
+            label: model.label,
+            ...(model.provider ? { provider: model.provider } : {})
+          }))
+        },
+        catalogSource:
+          view.catalogSource === 'seed' || view.catalogSource === null
+            ? ('host' as const)
+            : view.catalogSource,
+        permissionMode:
+          view.permissionMode ?? (agent === 'orca-agent' ? (defaultPermissionMode ?? 'ask') : null)
+      }
+    },
+    [agent, agentApiPresets, defaultPermissionMode, takesSendOptions]
   )
 
   return {

@@ -16,7 +16,11 @@ import { resolveHostCodexSessionSourceHome } from '../codex/codex-session-source
 import { browserManager } from '../browser/browser-manager'
 import { prewarmStructuredAgentModelCatalogs } from '../runtime/structured-agent-model-catalog-wiring'
 import { agentModelCatalogStore } from '../native-chat/agent-model-catalog/agent-model-catalog-store'
-import { createAgentModelCatalogSettingsExpiry } from '../native-chat/agent-model-catalog/agent-model-catalog-account-expiry'
+import {
+  createAgentModelCatalogSettingsExpiry,
+  pruneOrcaAgentModelCatalogForApiPresets
+} from '../native-chat/agent-model-catalog/agent-model-catalog-account-expiry'
+import { attachAgentModelCatalogPersistenceOnce } from '../runtime/structured-agent-model-catalog-wiring'
 import { mainProcessState as state } from './main-process-state'
 
 // Settings that change which account or binary a new chat's agent runs under.
@@ -28,7 +32,8 @@ const MODEL_CATALOG_ACCOUNT_SETTINGS = [
   'activeClaudeManagedAccountIdsByRuntime',
   'claudeManagedAccounts',
   'agentDefaultEnv',
-  'agentCmdOverrides'
+  'agentCmdOverrides',
+  'agentApiPresets'
 ] as const
 
 export function initializeMainProcessAccountServices(): void {
@@ -73,10 +78,22 @@ export function initializeMainProcessAccountServices(): void {
   )
   store.onSettingsChanged((updates, settings) => {
     expireModelCatalogs(updates, settings)
+    if ('agentApiPresets' in updates) {
+      pruneOrcaAgentModelCatalogForApiPresets(
+        agentModelCatalogStore,
+        settings.agentApiPresets ?? []
+      )
+    }
     // An account switch would otherwise leave the next chat's picker on a cold catalog.
     if (MODEL_CATALOG_ACCOUNT_SETTINGS.some((key) => key in updates)) {
       prewarmStructuredAgentModelCatalogs()
     }
+  })
+  void attachAgentModelCatalogPersistenceOnce(app.getPath('userData')).then(() => {
+    pruneOrcaAgentModelCatalogForApiPresets(
+      agentModelCatalogStore,
+      store.getSettings().agentApiPresets ?? []
+    )
   })
   store.migrateLegacyOpenCodeGoApiKey({
     has: hasOpenCodeGoApiKey,

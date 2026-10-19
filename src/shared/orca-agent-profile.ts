@@ -1,18 +1,7 @@
 import type { AgentApiConnection } from './agent-api-connection-schema'
 import { agentApiCatalogGroups } from './agent-api-model-catalog'
 import { DEFAULT_API_CONTEXT_WINDOW } from './agent-api-presets'
-import { sha256 } from '@noble/hashes/sha256'
-import { bytesToHex } from '@noble/hashes/utils'
-
-function providerId(connection: AgentApiConnection): string {
-  const identity = JSON.stringify([
-    connection.baseUrl,
-    connection.protocol,
-    connection.credentialType,
-    connection.apiKey
-  ])
-  return `orca-${bytesToHex(sha256(identity))}`
-}
+import { orcaAgentProviderId as providerId } from './orca-agent-model-id'
 
 export function orcaAgentProfileContent(
   active: AgentApiConnection,

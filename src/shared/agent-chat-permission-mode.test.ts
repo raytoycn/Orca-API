@@ -24,6 +24,7 @@ describe('agent chat permission modes', () => {
     expect(agentChatPermissionModes('claude')?.modes).toEqual(AGENT_CHAT_PERMISSION_MODES)
     expect(agentChatPermissionModes('codex')?.modes).toEqual(['ask', 'auto', 'full-access'])
     expect(agentChatPermissionModes('omp')?.modes).toEqual(['ask', 'full-access'])
+    expect(agentChatPermissionModes('orca-agent')?.modes).toEqual(['ask', 'auto', 'full-access'])
     expect(agentChatPermissionModes('pi')).toBeNull()
   })
 
@@ -37,6 +38,7 @@ describe('agent chat permission modes', () => {
     expect(newChatPermissionMode('claude', undefined)).toBe('ask')
     expect(newChatPermissionMode('omp', 'full-access')).toBe('full-access')
     expect(newChatPermissionMode('omp', 'accept-edits')).toBe('ask')
+    expect(newChatPermissionMode('orca-agent', 'full-access')).toBe('full-access')
     expect(newChatPermissionMode('pi', 'full-access')).toBeNull()
   })
 })

@@ -112,3 +112,70 @@ it('retains independent credentials for two APIs and switches the launched model
     })
   ).toThrow('changed endpoint')
 })
+
+it('refreshes an inactive API catalog without switching the active API or losing its model', () => {
+  const state: AgentLaunchSettingsSource = {
+    agentApiPresets: [
+      { id: 'a', name: 'A', connection, models: [{ id: 'model-a', name: 'A' }] },
+      {
+        id: 'b',
+        name: 'B',
+        connection: { ...connection, baseUrl: 'https://b.test/v1', apiKey: 'key-b' }
+      }
+    ],
+    activeAgentApiPresets: { kimi: 'a' }
+  }
+  const resolved = resolveAgentApiPresetMutation(state, {
+    type: 'api-preset-models',
+    agent: 'kimi',
+    id: 'b',
+    expectedConnection: { ...connection, baseUrl: 'https://b.test/v1', apiKey: 'key-b' },
+    models: [
+      { id: 'b-one', name: 'B One' },
+      { id: 'b-two', name: 'B Two' }
+    ]
+  })
+  expect(resolved.mutation).toEqual({ type: 'api-set', connection })
+  expect(resolved.updates.agentApiPresets?.[1]?.models).toHaveLength(2)
+  expect(resolved.updates).not.toHaveProperty('activeAgentApiPresets')
+})
+
+it('copies a compatible preset from another agent when Orca Agent activates it', () => {
+  const state: AgentLaunchSettingsSource = {
+    agentApiPresets: [
+      {
+        id: 'other-provider',
+        name: 'Other Provider',
+        connection,
+        models: [{ id: 'model-a', name: 'Model A' }]
+      }
+    ]
+  }
+  const resolved = resolveAgentApiPresetMutation(state, {
+    type: 'api-preset-activate',
+    agent: 'orca-agent',
+    id: 'other-provider',
+    model: 'model-a',
+    contextWindow: 1000000
+  })
+  expect(resolved.mutation).toEqual({
+    type: 'api-set',
+    connection: {
+      agent: 'orca-agent',
+      protocol: 'openai-completions',
+      baseUrl: 'https://example.test/v1',
+      model: 'model-a',
+      apiKey: 'fixture-key-a',
+      credentialType: 'api-key',
+      contextWindow: 1000000
+    }
+  })
+  expect(resolved.updates.agentApiPresets).toHaveLength(2)
+  expect(resolved.updates.activeAgentApiPresets).toEqual({
+    'orca-agent': 'other-provider:orca-bridge'
+  })
+  expect(resolved.updates.agentApiPresets?.[1]).toMatchObject({
+    id: 'other-provider:orca-bridge',
+    name: 'Other Provider · kimi'
+  })
+})

@@ -78,6 +78,7 @@ export type AgentCatalogRowProps = {
   environmentEditor?: React.ReactNode
   apiEditor?: React.ReactNode
   apiNotice?: string
+  apiButtonLabel?: string
 }
 
 export function AgentCatalogRow({
@@ -102,7 +103,8 @@ export function AgentCatalogRow({
   environmentNames,
   environmentEditor,
   apiEditor,
-  apiNotice
+  apiNotice,
+  apiButtonLabel
 }: AgentCatalogRowProps): React.JSX.Element {
   const envSummary = environmentNames?.join(' ') ?? stringifyAgentDefaultEnvDraft(envOverride)
   const defaultEnvSummary = stringifyAgentDefaultEnvDraft(defaultEnv)
@@ -129,7 +131,7 @@ export function AgentCatalogRow({
                 onClick={() => setApiOpen((previous) => !previous)}
                 aria-expanded={apiOpen}
               >
-                {translate('settings.agents.api.configure', 'Configure API')}
+                {apiButtonLabel ?? translate('settings.agents.api.configure', 'Configure API')}
               </Button>
             )}
             {!isEnabled && (

@@ -17,7 +17,7 @@ const fixture = vi.hoisted(() => ({
         ?.models ?? []
     )
   }),
-  launch: vi.fn(() => ({
+  launch: vi.fn((_request: { prompt: string }) => ({
     structuredSettlement: Promise.resolve({ kind: 'structured', sessionId: 'session-1' })
   })),
   state: {
@@ -54,9 +54,35 @@ const fixture = vi.hoisted(() => ({
             { id: 'b-one', name: 'B One' },
             { id: 'b-two', name: 'B Two' }
           ]
+        },
+        {
+          id: 'kimi-provider',
+          name: 'Kimi Provider',
+          connection: {
+            agent: 'kimi',
+            protocol: 'openai-completions',
+            baseUrl: 'https://kimi.example/v1',
+            model: 'k-one',
+            credentialType: 'api-key'
+          },
+          models: [{ id: 'k-one', name: 'K One' }]
         }
       ],
-      activeAgentApiPresets: { 'orca-agent': 'provider-a' }
+      activeAgentApiPresets: { 'orca-agent': 'provider-a' },
+      orcaAgentCollaboration: undefined as
+        | {
+            mode: 'single' | 'multi-role'
+            singleEffort: 'off' | 'low' | 'medium' | 'high'
+            coordinatorRoleId: string
+            roles: {
+              id: string
+              name: string
+              duty: string
+              model: string
+              effort: 'off' | 'low' | 'medium' | 'high'
+            }[]
+          }
+        | undefined
     },
     openModal: vi.fn()
   }
@@ -107,6 +133,7 @@ afterEach(() => {
     { id: 'a-one', name: 'A One' },
     { id: 'a-two', name: 'A Two' }
   ]
+  fixture.state.settings.orcaAgentCollaboration = undefined
 })
 
 it('refreshes a one-model cached preset to the full live model list', async () => {
@@ -119,10 +146,15 @@ it('refreshes a one-model cached preset to the full live model list', async () =
   render(<AgentChatLanding onChatStarted={vi.fn()} />)
 
   await vi.waitFor(() => {
-    expect(screen.getByLabelText('模型').querySelectorAll('option')).toHaveLength(19)
+    expect(screen.getByLabelText('模型').querySelectorAll('option')).toHaveLength(20)
   })
   expect(screen.getByLabelText('模型').textContent).toContain('Model 17 · Provider A')
+})
 
+it('shows the single-agent reasoning effort control on the landing page', () => {
+  render(<AgentChatLanding onChatStarted={vi.fn()} />)
+
+  expect(screen.getByLabelText<HTMLSelectElement>('思考模式').value).toBe('high')
 })
 
 it('shows models from every API and launches the first prompt with the selected API/model', async () => {
@@ -130,7 +162,7 @@ it('shows models from every API and launches the first prompt with the selected 
   const onChatStarted = vi.fn()
   render(<AgentChatLanding onChatStarted={onChatStarted} />)
   const modelPicker = screen.getByLabelText<HTMLSelectElement>('模型')
-  expect(modelPicker.options).toHaveLength(4)
+  expect(modelPicker.options).toHaveLength(5)
   expect(modelPicker.textContent).toContain('B Two · Provider B')
 
   fireEvent.change(modelPicker, { target: { value: JSON.stringify(['provider-b', 'b-two']) } })
@@ -166,4 +198,84 @@ it('shows models from every API and launches the first prompt with the selected 
       worktreeId: 'tree'
     })
   })
+})
+
+it("bridges another agent's compatible API model into Orca Agent", async () => {
+  render(<AgentChatLanding onChatStarted={vi.fn()} />)
+  const modelPicker = screen.getByLabelText<HTMLSelectElement>('模型')
+  expect(modelPicker.textContent).toContain('K One · Kimi Provider · kimi')
+
+  fireEvent.change(modelPicker, {
+    target: { value: JSON.stringify(['kimi-provider', 'k-one']) }
+  })
+  await vi.waitFor(() => {
+    expect(fixture.runtime).toHaveBeenCalledWith({ kind: 'local' }, 'settings.mutateAgentLaunch', {
+      type: 'api-preset-activate',
+      agent: 'orca-agent',
+      id: 'kimi-provider',
+      model: 'k-one',
+      contextWindow: 1000000
+    })
+  })
+})
+
+it('hides duplicate suppliers that point at the same API', () => {
+  const originalPresets = fixture.state.settings.agentApiPresets
+  fixture.state.settings.agentApiPresets = [
+    ...originalPresets,
+    {
+      ...originalPresets[0]!,
+      id: 'duplicate-provider',
+      name: 'a.example'
+    }
+  ]
+  try {
+    render(<AgentChatLanding onChatStarted={vi.fn()} />)
+    const modelPicker = screen.getByLabelText<HTMLSelectElement>('模型')
+    expect(modelPicker.options).toHaveLength(5)
+    expect(
+      Array.from(modelPicker.options).filter((option) => option.textContent?.includes('A One'))
+        .length
+    ).toBe(1)
+  } finally {
+    fixture.state.settings.agentApiPresets = originalPresets
+  }
+})
+
+it('wraps a landing prompt when multi-role collaboration is selected', async () => {
+  const providerId = `orca-${'a'.repeat(64)}`
+  fixture.state.settings.orcaAgentCollaboration = {
+    mode: 'multi-role',
+    singleEffort: 'high',
+    coordinatorRoleId: 'lead',
+    roles: [
+      {
+        id: 'writer',
+        name: '实现角色',
+        duty: '写代码并测试',
+        model: JSON.stringify([providerId, 'writer-model']),
+        effort: 'high'
+      },
+      {
+        id: 'lead',
+        name: '统筹角色',
+        duty: '派工和验收',
+        model: JSON.stringify([providerId, 'lead-model']),
+        effort: 'high'
+      }
+    ]
+  }
+  render(<AgentChatLanding onChatStarted={vi.fn()} />)
+  expect(screen.getByLabelText<HTMLSelectElement>('运行方式').value).toBe('multi-role')
+  fireEvent.change(screen.getByLabelText('输入需求'), { target: { value: '修复登录问题' } })
+  fireEvent.click(screen.getByRole('button', { name: '发送需求' }))
+  await vi.waitFor(() => {
+    expect(fixture.launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'orca-agent',
+        prompt: expect.stringContaining('协调角色固定为“统筹角色”')
+      })
+    )
+  })
+  expect(fixture.launch.mock.calls.at(-1)?.[0]?.prompt).toContain('实现角色')
 })

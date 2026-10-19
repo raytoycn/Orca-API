@@ -9,6 +9,7 @@ import {
   resolveFederatedWorkerLaunchReceipt,
   resolveWorkerLaunchPreferences
 } from './worker-launch-preferences'
+import { assertOrcaWorkerStructuredLaunch } from './orca-agent-worker-launch'
 import { WorkerStartParams } from '../../../../../../shared/rpc-contract/orchestration-worker-start-params'
 
 describe('orchestration worker launch preferences', () => {
@@ -253,6 +254,38 @@ describe('orchestration worker launch preferences', () => {
     expect(() =>
       resolveWorkerLaunchPreferences({ agent: 'grok', model: 'grok-code-fast-1' })
     ).toThrow('does not support launch-time model selection')
+  })
+
+  it('passes a provider-qualified Orca Agent model to a structured worker', () => {
+    const model = JSON.stringify([`orca-${'a'.repeat(64)}`, 'qwen3.8-max'])
+    expect(resolveWorkerLaunchPreferences({ agent: 'orca-agent', model })).toEqual({
+      preferences: { model },
+      receipt: {
+        requested: { agent: 'orca-agent', model, effort: null },
+        effective: { agent: 'orca-agent', model, effort: null }
+      }
+    })
+  })
+
+  it('refuses an Orca Agent model without its provider and requires structured chat', () => {
+    expect(() =>
+      resolveWorkerLaunchPreferences({ agent: 'orca-agent', model: 'qwen3.8-max' })
+    ).toThrow('Choose an Orca Agent provider-qualified model')
+    const model = JSON.stringify([`orca-${'a'.repeat(64)}`, 'qwen3.8-max'])
+    expect(() =>
+      assertOrcaWorkerStructuredLaunch({
+        agent: 'orca-agent',
+        model,
+        mode: 'terminal'
+      })
+    ).toThrow('requires structured chat')
+    expect(() =>
+      assertOrcaWorkerStructuredLaunch({
+        agent: 'orca-agent',
+        model,
+        mode: 'structured'
+      })
+    ).not.toThrow()
   })
 
   it('does not expose deprecated Gemini model selection to worker-start', () => {

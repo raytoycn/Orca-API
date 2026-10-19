@@ -13,6 +13,7 @@ import {
 } from '../../shared/agent-api-connection'
 import { agentApiProfileContent } from '../../shared/agent-api-profile-content'
 import { agentApiCatalogConnections } from '../../shared/agent-api-model-catalog'
+import type { AgentApiPreset } from '../../shared/agent-api-presets'
 
 const base: AgentApiConnection = {
   agent: 'kimi',
@@ -30,7 +31,7 @@ const connections = [
 
 it('expands one saved API model catalog into native per-model routes', () => {
   const active = { ...base, contextWindow: 1000000 }
-  const preset = {
+  const preset: AgentApiPreset = {
     id: 'provider-a',
     name: 'Provider A',
     connection: base,
@@ -42,6 +43,52 @@ it('expands one saved API model catalog into native per-model routes', () => {
   expect(agentApiCatalogConnections(active, [preset])).toEqual([
     active,
     { ...base, model: 'second', contextWindow: 2000000 }
+  ])
+})
+
+it('bridges compatible presets from other agents into the Orca Agent catalog', () => {
+  const active: AgentApiConnection = {
+    agent: 'orca-agent',
+    protocol: 'openai-completions',
+    baseUrl: 'https://orca.test/v1',
+    model: 'orca-model',
+    apiKey: 'orca-secret',
+    credentialType: 'api-key'
+  }
+  const preset: AgentApiPreset = {
+    id: 'other-agent-provider',
+    name: 'Other Agent Provider',
+    connection: {
+      agent: 'kimi',
+      protocol: 'openai-completions',
+      baseUrl: 'https://other-agent.test/v1',
+      model: 'other-model',
+      apiKey: 'other-secret',
+      credentialType: 'api-key'
+    },
+    models: [
+      { id: 'other-model', name: 'Other Model' },
+      { id: 'other-model-large', name: 'Other Model Large' }
+    ]
+  }
+  expect(agentApiCatalogConnections(active, [preset])).toEqual([
+    active,
+    {
+      agent: 'orca-agent',
+      protocol: 'openai-completions',
+      baseUrl: 'https://other-agent.test/v1',
+      model: 'other-model',
+      apiKey: 'other-secret',
+      credentialType: 'api-key'
+    },
+    {
+      agent: 'orca-agent',
+      protocol: 'openai-completions',
+      baseUrl: 'https://other-agent.test/v1',
+      model: 'other-model-large',
+      apiKey: 'other-secret',
+      credentialType: 'api-key'
+    }
   ])
 })
 

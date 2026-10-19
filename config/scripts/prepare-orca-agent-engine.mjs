@@ -31,7 +31,11 @@ writeFileSync(
     2
   )
 )
-const launcher = `import { fileURLToPath } from 'node:url'\nconst patch = process.env.ORCA_HARNESS_PATCH\nif (!patch) { console.error('Configure an API for Orca Agent in Settings before starting.'); process.exit(1) }\nconst entry = new URL('./node_modules/@deepseek-ai/dsh/lib/bin.js', import.meta.url)\nprocess.argv = [process.execPath, fileURLToPath(entry), '--profile', 'acp', '--patch', patch, ...process.argv.slice(2)]\nconst { runCli } = await import(entry.href)\nawait runCli()\n`
+cpSync(
+  join(root, 'config/scripts/orca-agent-permissions.mjs'),
+  join(destination, 'orca-agent-permissions.mjs')
+)
+const launcher = `import { fileURLToPath } from 'node:url'\nimport { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs'\nimport { tmpdir } from 'node:os'\nimport { join, dirname } from 'node:path'\nconst patch = process.env.ORCA_HARNESS_PATCH\nif (!patch) { console.error('Configure an API for Orca Agent in Settings before starting.'); process.exit(1) }\nconst rows = JSON.parse(readFileSync(patch, 'utf8'))\nrows.push({ insert: [{ id: 'orca-chat-permissions', name: new URL('./orca-agent-permissions.mjs', import.meta.url).href }] })\nconst sessionPatch = join(mkdtempSync(join(tmpdir(), 'orca-chat-profile-')), 'cordis.patch.yml')\nwriteFileSync(sessionPatch, JSON.stringify(rows), { mode: 0o600 })\nprocess.on('exit', () => { try { rmSync(dirname(sessionPatch), { recursive: true, force: true }) } catch {} })\nconst entry = new URL('./node_modules/@deepseek-ai/dsh/lib/bin.js', import.meta.url)\nprocess.argv = [process.execPath, fileURLToPath(entry), '--profile', 'acp', '--patch', sessionPatch, ...process.argv.slice(2)]\nconst { runCli } = await import(entry.href)\nawait runCli()\n`
 writeFileSync(join(destination, 'launcher.mjs'), launcher)
 writeFileSync(
   join(destination, 'orca-agent.cmd'),

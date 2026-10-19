@@ -189,6 +189,16 @@ describe('AgentsPane', () => {
     expect(detectedAgentsMock.lastTarget).toEqual({ kind: 'local' })
   })
 
+  it('shows the Orca Agent collaboration controls on the local agents page', () => {
+    const markup = renderPane(getDefaultSettings('/tmp'))
+
+    expect(markup).toContain('Orca Agent 协同')
+    expect(markup).toContain('单 Agent')
+    expect(markup).toContain('多角色协同')
+    expect(markup).toContain('单 Agent 思考模式')
+    expect(markup.indexOf('Orca Agent 协同')).toBeLessThan(markup.indexOf('Installed'))
+  })
+
   it('waits for host launch settings before displaying remote agent controls', () => {
     // Repro for the "Remote Server lists local agents" bug: with an Active
     // Server selected, the Installed list must probe that server's PATH.
@@ -210,6 +220,8 @@ describe('AgentsPane', () => {
       expect(detectedAgentsMock.lastTarget).toBeUndefined()
       expect(markup).toContain('Loading agent settings…')
       expect(markup).not.toContain('Default Agent')
+      expect(markup).toContain('Orca Agent 协同')
+      expect(markup).toContain('单 Agent 思考模式')
     } finally {
       initialState.runtimeEnvironments = priorRuntimeEnvironments
     }

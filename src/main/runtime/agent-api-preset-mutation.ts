@@ -1,5 +1,6 @@
 import { AgentApiConnection } from '../../shared/agent-api-connection'
-import { AgentApiPresetDraft } from '../../shared/agent-api-presets'
+import { AGENT_API_PROTOCOLS } from '../../shared/agent-api-connection-schema'
+import { AgentApiPresetDraft, type AgentApiPreset } from '../../shared/agent-api-presets'
 import type {
   AgentLaunchSettingsMutation,
   AgentLaunchSettingsSource
@@ -8,7 +9,46 @@ import type {
 export function resolveAgentApiPresetMutation(
   settings: AgentLaunchSettingsSource,
   mutation: AgentLaunchSettingsMutation
-) {
+): {
+  mutation: AgentLaunchSettingsMutation
+  updates: Partial<AgentLaunchSettingsSource>
+} {
+  if (mutation.type === 'api-preset-models') {
+    const saved = settings.agentApiPresets?.find(
+      (preset) => preset.id === mutation.id && preset.connection.agent === mutation.agent
+    )
+    if (
+      !saved ||
+      JSON.stringify(saved.connection) !== JSON.stringify(mutation.expectedConnection)
+    ) {
+      throw new Error('API configuration changed; retry the operation')
+    }
+    const presets = (settings.agentApiPresets ?? []).map((preset) =>
+      preset === saved ? { ...preset, models: mutation.models } : preset
+    )
+    const active = presets.find(
+      (preset) => preset.id === settings.activeAgentApiPresets?.[mutation.agent]
+    )
+    const activeOrcaAgent = presets.find(
+      (preset) =>
+        preset.id === settings.activeAgentApiPresets?.['orca-agent'] &&
+        preset.connection.agent === 'orca-agent'
+    )
+    return {
+      mutation: activeOrcaAgent
+        ? ({
+            type: 'api-set',
+            connection: activeOrcaAgent.connection
+          } satisfies AgentLaunchSettingsMutation)
+        : active
+          ? ({
+              type: 'api-set',
+              connection: active.connection
+            } satisfies AgentLaunchSettingsMutation)
+          : mutation,
+      updates: { agentApiPresets: presets }
+    }
+  }
   if (
     mutation.type === 'api-preset-delete' &&
     settings.activeAgentApiPresets?.[mutation.agent] !== mutation.id
@@ -53,8 +93,74 @@ export function resolveAgentApiPresetMutation(
   const agent =
     draft?.connection.agent ??
     (mutation.type === 'api-preset-activate' ? mutation.agent : undefined)
-  if (saved && saved.connection.agent !== agent) {
+  if (
+    saved &&
+    saved.connection.agent !== agent &&
+    !(
+      mutation.type === 'api-preset-activate' &&
+      agent === 'orca-agent' &&
+      AGENT_API_PROTOCOLS['orca-agent'].includes(saved.connection.protocol)
+    )
+  ) {
     throw new Error('API preset agent mismatch')
+  }
+  if (
+    saved &&
+    saved.connection.agent !== 'orca-agent' &&
+    agent === 'orca-agent' &&
+    mutation.type === 'api-preset-activate'
+  ) {
+    const existingOrcaPreset = settings.agentApiPresets?.find(
+      (preset) =>
+        preset.connection.agent === 'orca-agent' &&
+        preset.connection.baseUrl === saved.connection.baseUrl &&
+        preset.connection.protocol === saved.connection.protocol &&
+        preset.connection.credentialType === saved.connection.credentialType &&
+        preset.connection.apiKey === saved.connection.apiKey
+    )
+    if (existingOrcaPreset) {
+      return {
+        mutation: {
+          type: 'api-preset-activate',
+          agent: 'orca-agent',
+          id: existingOrcaPreset.id,
+          ...(mutation.model ? { model: mutation.model } : {}),
+          ...(mutation.contextWindow ? { contextWindow: mutation.contextWindow } : {})
+        } satisfies AgentLaunchSettingsMutation,
+        updates: {
+          activeAgentApiPresets: {
+            ...settings.activeAgentApiPresets,
+            'orca-agent': existingOrcaPreset.id
+          }
+        }
+      }
+    }
+    const bridgedConnection = AgentApiConnection.parse({
+      ...saved.connection,
+      agent: 'orca-agent',
+      ...(mutation.model ? { model: mutation.model } : {}),
+      ...(mutation.contextWindow ? { contextWindow: mutation.contextWindow } : {})
+    })
+    const bridgedId = `${saved.id}:orca-bridge`
+    const bridgedPreset: AgentApiPreset = {
+      id: bridgedId,
+      name: `${saved.name} · ${saved.connection.agent}`,
+      connection: bridgedConnection,
+      ...(saved.models ? { models: saved.models } : {})
+    }
+    return {
+      mutation: { type: 'api-set', connection: bridgedConnection },
+      updates: {
+        agentApiPresets: [
+          ...(settings.agentApiPresets ?? []).filter((entry) => entry.id !== bridgedId),
+          bridgedPreset
+        ],
+        activeAgentApiPresets: {
+          ...settings.activeAgentApiPresets,
+          'orca-agent': bridgedId
+        }
+      }
+    }
   }
   const connection = AgentApiConnection.parse(
     draft

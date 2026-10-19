@@ -104,3 +104,46 @@ describe('NativeChatModelCombobox', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 })
+
+it('places equal model names under their respective supplier headings and selects their exact routes', async () => {
+  const onSelect = vi.fn()
+  const choices = [
+    { value: 'a-qwen', label: 'Qwen3.8-Max', provider: { id: 'a', label: 'Supplier A' } },
+    { value: 'a-glm', label: 'GLM-5', provider: { id: 'a', label: 'Supplier A' } },
+    { value: 'b-qwen', label: 'Qwen3.8-Max', provider: { id: 'b', label: 'Supplier B' } }
+  ]
+  render(
+    <NativeChatModelCombobox
+      choices={choices}
+      currentValue="a-qwen"
+      readOnly={false}
+      readOnlyReason={null}
+      busy={false}
+      onSelect={onSelect}
+    />
+  )
+  await settle()
+  const a = screen.getByRole('group', { name: 'Supplier A' })
+  const b = screen.getByRole('group', { name: 'Supplier B' })
+  expect(a.querySelectorAll('[role="option"]')).toHaveLength(2)
+  expect(b.querySelectorAll('[role="option"]')).toHaveLength(1)
+  fireEvent.click(b.querySelector('[role="option"]')!)
+  expect(onSelect).toHaveBeenCalledWith('b-qwen')
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Supplier B Qwen' } })
+  expect(listedModels()).toEqual(['b-qwen'])
+})
+
+it('keeps a supplier heading with just one API configured', async () => {
+  render(
+    <NativeChatModelCombobox
+      choices={[{ value: 'qwen', label: 'Qwen3.8-Max', provider: { id: 'a', label: 'My API' } }]}
+      currentValue="qwen"
+      readOnly={false}
+      readOnlyReason={null}
+      busy={false}
+      onSelect={vi.fn()}
+    />
+  )
+  await settle()
+  expect(screen.getByRole('group', { name: 'My API' }).textContent).toContain('Qwen3.8-Max')
+})

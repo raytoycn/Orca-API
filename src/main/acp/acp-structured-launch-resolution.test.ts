@@ -94,7 +94,7 @@ describe('ACP launch resolution', () => {
       GROK_HOME: '/home/user/.grok-work',
       GROK_EXTRA: '1'
     })
-    expect(searched[0]).toContain('/home/user/.grok-work/bin')
+    expect(searched[0]).toContain(join('/home/user/.grok-work', 'bin'))
   })
 
   it('creates a new ACP session after clear instead of probing the old session', async () => {
@@ -369,3 +369,32 @@ describe('ACP launch folder of a floating chat', () => {
     expect(pinLaunchDirectory).not.toHaveBeenCalled()
   })
 })
+
+it.each(['ask', 'auto', 'full-access'] as const)(
+  'passes Orca Agent chat permission %s to the engine',
+  async (permissionMode) => {
+    const spec = acpLaunchSpecFor('orca-agent')!
+    const resolve = createAcpStructuredLaunchResolver(spec, {
+      store: {
+        getRecord: () => ({
+          ...grokRecord(),
+          provider: 'orca-agent',
+          permissionMode,
+          accountHome: { variable: 'DSH_HOME', path: '/home/user/.orca-agent' }
+        }),
+        pinLaunchDirectory: vi.fn()
+      },
+      readJournal: () => null,
+      resolveWorkspacePath: async () => '/repo/worktree',
+      resolveEnvironment: async () => ({ PATH: '/usr/bin', HOME: '/home/user' }),
+      resolveCommand: () => '/resolved/orca-agent'
+    })
+    const launch = await resolve({
+      identity: { ...identity, agent: 'orca-agent' },
+      spawnToken: 'test-token',
+      permissionMode
+    })
+    expect(launch.env.ORCA_CHAT_PERMISSION_MODE).toBe(permissionMode)
+    expect(launch.fullAccess).toBe(permissionMode === 'full-access')
+  }
+)

@@ -1,5 +1,9 @@
 import type { GlobalSettings } from '../../../shared/global-settings-types'
 import type { AgentModelCatalogStore } from './agent-model-catalog-store'
+import type { AgentApiPreset } from '../../../shared/agent-api-presets'
+import { summarizeAgentApiPresets } from '../../../shared/agent-api-presets'
+import { uniqueOrcaAgentApiPresets } from '../../../shared/agent-api-model-catalog'
+import { parseOrcaProviderModel } from '../../../shared/orca-agent-collaboration'
 
 // The settings whose change swaps the account an agent's chats sign in with.
 const ACCOUNT_SETTINGS = {
@@ -81,4 +85,19 @@ export function createAgentModelCatalogSettingsExpiry(
     }
     launch = next
   }
+}
+/** Removes cached Orca Agent model rows whose saved API preset/provider no longer exists. */
+export function pruneOrcaAgentModelCatalogForApiPresets(
+  store: Pick<AgentModelCatalogStore, 'pruneAgentModels'>,
+  presets: readonly AgentApiPreset[]
+): void {
+  const validProviderIds = new Set(
+    uniqueOrcaAgentApiPresets(summarizeAgentApiPresets(presets))
+      .map((preset) => preset.modelProviderId)
+      .filter((providerId): providerId is string => providerId !== undefined)
+  )
+  store.pruneAgentModels('orca-agent', (modelId) => {
+    const parsed = parseOrcaProviderModel(modelId)
+    return parsed === null || validProviderIds.has(parsed.providerId)
+  })
 }

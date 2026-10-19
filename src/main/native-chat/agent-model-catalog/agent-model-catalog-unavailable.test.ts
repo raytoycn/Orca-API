@@ -5,7 +5,8 @@ import { createAgentModelCatalogService } from './agent-model-catalog-service'
 import {
   agentsWithChangedLaunchSettings,
   createAgentModelCatalogSettingsExpiry,
-  expireAgentModelCatalogFailuresForSettings
+  expireAgentModelCatalogFailuresForSettings,
+  pruneOrcaAgentModelCatalogForApiPresets
 } from './agent-model-catalog-account-expiry'
 import {
   AGENT_MODEL_CATALOG_FAILURE_TTL_MS,
@@ -330,5 +331,23 @@ describe("an agent's command or environment change", () => {
     expect(agentsWithChangedLaunchSettings({ agentCmdOverrides: { codex: 'codex' } }, {})).toEqual([
       'codex'
     ])
+  })
+
+  it('prunes Orca Agent models after their API preset is removed', () => {
+    const store = new AgentModelCatalogStore()
+    const providerId = `orca-${'a'.repeat(64)}`
+    const modelId = JSON.stringify([providerId, 'qwen3.8'])
+    store.recordSuccess(
+      'fp-orca',
+      'orca-agent',
+      {
+        models: [{ id: modelId, label: 'Qwen3.8', isDefault: true, efforts: [] }],
+        origin: 'probe'
+      },
+      'discovery'
+    )
+
+    pruneOrcaAgentModelCatalogForApiPresets(store, [])
+    expect(store.get('fp-orca')).toBeNull()
   })
 })

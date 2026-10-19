@@ -226,9 +226,10 @@ export function buildNativeChatSessionOptionSnapshot(args: {
   // Why: callers reconcile the tracked model into `models` (see
   // withTrackedNativeChatModel), so every listed row is a real choice and the
   // trigger never shows a value without one.
-  const modelChoices = models.map(({ id, label, description }) => ({
+  const modelChoices = models.map(({ id, label, description, provider }) => ({
     value: id,
     label,
+    ...(provider ? { provider } : {}),
     ...(description ? { description } : {})
   }))
   const trackedModelId = typeof modelTracked?.value === 'string' ? modelTracked.value : null

@@ -383,6 +383,7 @@ export type AgentSessionOptionChoice = {
 }
 
 export type AgentSessionModelOption = {
+  provider?: { id: string; label: string }
   id: string
   label: string
   description?: string
