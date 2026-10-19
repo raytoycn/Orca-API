@@ -94,10 +94,10 @@
 /mobile/web-entry/**/*.otf -text
 /mobile/web-entry/**/*.woff -text
 /mobile/web-entry/**/*.woff2 -text
-
 # Generated ACP schemas are checked byte-for-byte against formatted output.
 /src/main/acp/generated/*.generated.ts linguist-generated=true text eol=lf
 # Generated skill bundle artifacts are verified byte-for-byte against fresh output.
 /resources/skills/*.json linguist-generated=true text eol=lf
 # Vitest writes snapshots with LF, so checkout bytes must match on every host.
 **/__snapshots__/*.snap text eol=lf
+releases/*.exe filter=lfs diff=lfs merge=lfs -text
