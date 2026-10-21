@@ -15,6 +15,7 @@ import type { TerminalSurfaceCloseTarget } from '../../shared/terminal-surface-c
 import type { ClipboardImageThumbnail } from '../../shared/clipboard-image'
 import type { ReadClipboardTextOptions } from '../../shared/clipboard-text'
 import type { PreloadApi } from '../api-types'
+import type { ApplicationMenuPopup } from '../../shared/application-menu-popup'
 
 export const uiClipboardAndWindowControlsApi = {
   onOpenDiffFromMobile: (
@@ -193,8 +194,8 @@ export const uiClipboardAndWindowControlsApi = {
   requestClose: (): void => {
     ipcRenderer.send('window:request-close')
   },
-  popupMenu: (): void => {
-    ipcRenderer.send('menu:popup')
+  popupMenu: (options?: ApplicationMenuPopup): void => {
+    ipcRenderer.send('menu:popup', options)
   },
   onWindowCloseRequested: (callback: (data: { isQuitting: boolean }) => void): (() => void) => {
     const listener = (

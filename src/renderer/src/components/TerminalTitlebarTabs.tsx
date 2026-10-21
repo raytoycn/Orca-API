@@ -3,6 +3,7 @@ import type { TerminalTab } from '../../../shared/terminal-tab-types'
 import { useAppStore } from '../store'
 import TabBar from './tab-bar/TabBar'
 import type { TerminalController } from './use-terminal-controller'
+import { hasCustomTitleBar } from '../app-shell/app-window-chrome'
 
 const EMPTY_TERMINAL_TABS: TerminalTab[] = []
 
@@ -58,10 +59,14 @@ export function TerminalTitlebarTabs({
     worktreeClientHostedBrowserRows,
     worktreeFiles
   } = controller
-  if (!renderedActiveWorktreeId || effectiveActiveLayout || !titlebarTabsTarget) {
+  if (
+    !renderedActiveWorktreeId ||
+    effectiveActiveLayout ||
+    (!hasCustomTitleBar && !titlebarTabsTarget)
+  ) {
     return null
   }
-  return createPortal(
+  const tabs = (
     <LiveTerminalTabBar
       activeTabId={activeTabId}
       worktreeId={renderedActiveWorktreeId}
@@ -111,7 +116,11 @@ export function TerminalTitlebarTabs({
       onMakePreviewFilePermanent={makePreviewFilePermanent}
       onPinFile={pinFile}
       tabBarOrder={tabBarOrder}
-    />,
-    titlebarTabsTarget
+    />
   )
+  return hasCustomTitleBar ? (
+    <div className="flex h-9 shrink-0 min-w-0 border-b">{tabs}</div>
+  ) : titlebarTabsTarget ? (
+    createPortal(tabs, titlebarTabsTarget)
+  ) : null
 }

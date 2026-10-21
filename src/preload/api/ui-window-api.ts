@@ -1,6 +1,7 @@
 import type { AgentSessionAttachmentClipboardTarget } from '../../shared/agent-session-attachments'
 import type { ClipboardImageThumbnail } from '../../shared/clipboard-image'
 import type { ReadClipboardTextOptions } from '../../shared/clipboard-text'
+import type { ApplicationMenuPopup } from '../../shared/application-menu-popup'
 import type {
   RichMarkdownContextMenuCommandPayload,
   RichMarkdownContextMenuTableTarget
@@ -55,7 +56,7 @@ export type UiWindowApi = {
   isMaximized: () => Promise<boolean>
   onMaximizeChanged: (callback: (isMaximized: boolean) => void) => () => void
   requestClose: () => void
-  popupMenu: () => void
+  popupMenu: (options?: ApplicationMenuPopup) => void
   onWindowCloseRequested: (callback: (data: { isQuitting: boolean }) => void) => () => void
   confirmWindowClose: () => void
   notifyWindowRevealed: () => void

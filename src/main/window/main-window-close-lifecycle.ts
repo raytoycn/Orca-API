@@ -8,6 +8,7 @@ import type { MainWindowFocusLifecycle } from './main-window-focus-lifecycle'
 import type { MainWindowStateLifecycle } from './main-window-state-lifecycle'
 import { syncTrafficLightPosition } from './main-window-visual-lifecycle'
 import { consumeUserQuitWindowClose } from './user-quit-window-close'
+import type { ApplicationMenuPopup } from '../../shared/application-menu-popup'
 
 export const WINDOW_QUIT_RENDERER_ACK_TIMEOUT_MS = QUIT_RENDERER_ACK_TIMEOUT_MS
 
@@ -180,8 +181,26 @@ export function installMainWindowCloseLifecycle(args: {
   }
   // Why: renderer-drawn title-bar ··· menu button replicates the Alt-key reveal autoHideMenuBar provides (Windows/Linux).
   const popupMenuChannel = 'menu:popup'
-  const onPopupMenu = (): void => {
-    Menu.getApplicationMenu()?.popup({ window: mainWindow })
+  const onPopupMenu = (event: Electron.IpcMainEvent, options?: ApplicationMenuPopup): void => {
+    if (event.sender !== mainWindow.webContents || mainWindow.isDestroyed()) {
+      return
+    }
+    const applicationMenu = Menu.getApplicationMenu()
+    if (options) {
+      if (!['file', 'edit', 'view', 'window', 'help'].includes(options.menu)) {
+        return
+      }
+      if (!Number.isFinite(options.x) || !Number.isFinite(options.y)) {
+        return
+      }
+      applicationMenu?.getMenuItemById(options.menu)?.submenu?.popup({
+        window: mainWindow,
+        x: Math.round(options.x),
+        y: Math.round(options.y)
+      })
+    } else {
+      applicationMenu?.popup({ window: mainWindow })
+    }
   }
   // Why: WindowControls mounts after window:maximize-changed already fired, so expose a synchronous getter to init its icon.
   const isMaximizedChannel = 'window:isMaximized'

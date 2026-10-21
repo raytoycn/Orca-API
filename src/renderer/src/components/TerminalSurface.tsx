@@ -28,8 +28,8 @@ export function TerminalSurface({
       data-rendered-active-worktree-id={renderedActiveWorktreeId ?? undefined}
     >
       <EditorAutosaveController />
-      <TerminalTitlebarTabs controller={controller} />
       <AgentWorkspaceSwitcher controller={controller} />
+      <TerminalTitlebarTabs controller={controller} />
       <TerminalSplitWorkspaceSurfaces controller={controller} />
       <TerminalLegacyWorkspaceSurface controller={controller} />
       <TerminalWorkspaceDialogs controller={controller} />

@@ -11,6 +11,8 @@ import { TitlebarLeftControls } from './TitlebarLeftControls'
 import { RightSidebarToggle, TitlebarMainStrip } from './TitlebarMainStrip'
 import type { AppChromeLayout } from './use-app-chrome-layout'
 import type { FloatingWorkspacePanelState } from './use-floating-workspace-panel'
+import { hasCustomTitleBar } from './app-window-chrome'
+import { WorkspaceMenuBar } from './WorkspaceMenuBar'
 
 const WorktreeCreationPanel = lazy(
   () => import('../components/worktree-creation/WorktreeCreationPanel')
@@ -153,10 +155,13 @@ export function AppWorkspaceShell(props: {
               )
             ) : null}
             <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+              {hasCustomTitleBar &&
+                layout.leftTitlebarChromeLayout.shouldMount &&
+                !layout.stackedSidebarOpen && <WorkspaceMenuBar />}
               {/* Why: automations/artifacts own their page headers; the stacked titlebar would be an empty 36px stripe. */}
               {layout.stackedSidebarOpen &&
-              layout.activeView !== 'automations' &&
-              layout.activeView !== 'artifacts' ? (
+              (hasCustomTitleBar ||
+                (layout.activeView !== 'automations' && layout.activeView !== 'artifacts')) ? (
                 <div className="titlebar">{titlebarMainStrip}</div>
               ) : null}
               <div className="relative flex flex-1 min-w-0 min-h-0 overflow-hidden">

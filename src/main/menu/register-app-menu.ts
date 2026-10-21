@@ -342,11 +342,11 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
 
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac ? [macAppMenu] : []),
-    ...(isMac ? [] : [fileMenu]),
-    editMenu,
-    viewMenu,
-    windowMenu,
-    helpMenu
+    ...(isMac ? [] : [{ ...fileMenu, id: 'file' }]),
+    { ...editMenu, id: 'edit' },
+    { ...viewMenu, id: 'view' },
+    { ...windowMenu, id: 'window' },
+    { ...helpMenu, id: 'help' }
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
