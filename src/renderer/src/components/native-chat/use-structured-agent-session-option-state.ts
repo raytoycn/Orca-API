@@ -1,39 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CatalogModel } from '../../../../shared/agent-session-option-catalog-types'
 import type { AgentSessionConversationCommand } from '../../../../shared/agent-session-conversation-command'
-import type { AgentSessionOptionsResult } from '../../../../shared/agent-session-wire'
+import type {
+  AgentSessionModelCatalogResult,
+  AgentSessionOptionsResult
+} from '../../../../shared/agent-session-wire'
 import type { AgentSessionRewindSupport } from '../../../../shared/agent-session-rewind'
 import type { AgentType } from '../../../../shared/agent-status-types'
 import type { AgentSessionOptionCatalog } from '../../../../shared/agent-session-option-catalog'
+import { usesInstalledAgentModelCatalog } from '../../../../shared/agent-model-catalog-ownership'
 import { structuredAgentSessionSeedCatalog } from '../../../../shared/structured-agent-session-seed-catalog'
 import {
   applyStructuredAgentSessionModelCatalog,
   applyStructuredAgentSessionOptions,
+  settleStructuredAgentSessionBuiltinCatalog,
   createStructuredAgentSessionOptionState,
   type StructuredAgentSessionOptionState
 } from '../../../../shared/structured-agent-session-options'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { structuredAgentSessionOptionView } from '../../../../shared/structured-agent-session-option-view'
+import { AGENT_SESSION_COHERENT_MODEL_CATALOG_CAPABILITY } from '../../../../shared/structured-agent-session-surface-capabilities'
 import { AGENT_SESSION_SEND_OPTIONS_RUNTIME_CAPABILITY } from '../../../../shared/agent-session-create-capabilities'
-import { useStructuredAgentSessionHostCapability } from '@/runtime/structured-agent-session-host-capability'
+import {
+  useStructuredAgentSessionHostCapability,
+  structuredAgentSessionHostKey
+} from '@/runtime/structured-agent-session-host-capability'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
 import { readHostModelCatalogSnapshot } from '@/runtime/host-model-catalog-snapshots'
-import { cloneNativeChatSessionOptionRecord } from '../../../../shared/native-chat-session-option-state'
 import { useAppStore } from '@/store'
 import { useAgentApiModelPresets } from './use-agent-api-model-presets'
 import { includeConfiguredApiModelsInSessionOptions } from '../../../../shared/agent-api-model-catalog'
-import { isOrcaAgentBridgeableApiPreset } from '../../../../shared/agent-api-model-catalog'
+import { configuredAgentApiOptionView } from '../../../../shared/agent-api-session-option-view'
+import { cloneStructuredAgentSessionOptionRecord } from '../../../../shared/structured-agent-session-option-state'
 import {
   createCoalescedPollRunner,
   type CoalescedPollRunner
 } from '../right-sidebar/coalesced-poll-runner'
-
-function catalogModelEfforts(
-  model: CatalogModel
-): AgentSessionOptionsResult['models'][number]['efforts'] {
-  const effort = model.options.find((entry) => entry.id === 'effort')
-  return effort?.kind.type === 'select' ? effort.kind.choices : []
-}
 
 /** The first frame: the host's saved list when the renderer already holds it, else the seed,
  *  which shows the quiet placeholder until the host answers. */
@@ -113,7 +114,7 @@ export function useStructuredAgentSessionOptionState(args: {
   const firstFrameLaunch = useRef({ target, newLaunch, worktree, seedsModel })
   useEffect(() => {
     firstFrameLaunch.current = { target, newLaunch, worktree, seedsModel }
-  }, [newLaunch, seedsModel, target, worktree])
+  }, [target, newLaunch, worktree, seedsModel])
   const optionStateRef = useRef(optionState)
   const activeOptionRecordRef = useRef(optionState.record)
   // A pick on its way to the host, which every send carries too.
@@ -127,35 +128,45 @@ export function useStructuredAgentSessionOptionState(args: {
     },
     []
   )
+  const hostKey = structuredAgentSessionHostKey(target)
+  const contextKey = JSON.stringify([identity, hostKey, newLaunch, worktree, fence])
+  const contextRef = useRef(contextKey)
+  useEffect(() => {
+    contextRef.current = contextKey
+  }, [contextKey])
+  const isCurrentContext = useCallback(() => contextRef.current === contextKey, [contextKey])
+  const writes = useRef({ count: 0, readback: false })
+  const coherentCatalog = usesInstalledAgentModelCatalog(
+    agent,
+    useStructuredAgentSessionHostCapability(target, AGENT_SESSION_COHERENT_MODEL_CATALOG_CAPABILITY)
+  )
   const optionIdentityRef = useRef(identity)
   useEffect(() => {
     const previous = optionStateRef.current
     const sameSession = optionIdentityRef.current === identity
     optionIdentityRef.current = identity
     const launch = firstFrameLaunch.current
-    const seeded = firstFrameOptionState(agent, launch.target, {
-      newLaunch: launch.newLaunch,
-      seedsModel: launch.seedsModel,
-      ...(launch.worktree ? { worktree: launch.worktree } : {})
-    })
+    const seeded = firstFrameOptionState(agent, launch.target, launch)
     // The chat's next runtime starts with the picks the host saved, which this view last showed,
     // and a starting agent is not read: keep them, and the account's list, until a read replaces them.
     const kept =
       sameSession && previous.catalogSource !== 'seed' && previous.catalogSource !== null
         ? {
             ...previous,
-            record: cloneNativeChatSessionOptionRecord(previous.record),
+            catalogSource: 'host' as const,
+            record: cloneStructuredAgentSessionOptionRecord(previous.record),
             pendingId: null
           }
         : seeded
     // The chat's own, which a restart for a new mode keeps: the picker never blanks between them.
     const next = sameSession ? { ...kept, permissionMode: previous.permissionMode } : kept
+    writes.current = { count: 0, readback: false }
     optionMutationGeneration.current += 1
     pendingOptionsRef.current = {}
     optionStateRef.current = next
     activeOptionRecordRef.current = next.record
     setOptionState(next)
-  }, [agent, fence, identity])
+  }, [agent, contextKey, fence, identity])
 
   const optionsReadRef = useRef<CoalescedPollRunner | null>(null)
   // Refresh options each turn to confirm which model the provider actually selected, and once
@@ -166,6 +177,15 @@ export function useStructuredAgentSessionOptionState(args: {
     }
     let stale = false
     const runner = createCoalescedPollRunner(async () => {
+      if (!isCurrentContext()) {
+        return
+      }
+      if (writes.current.count) {
+        writes.current.readback = true
+        return
+      }
+      writes.current.readback = false
+      const record = activeOptionRecordRef.current
       const readGeneration = optionMutationGeneration.current
       const result = await callStructuredAgentSession<AgentSessionOptionsResult>(
         target,
@@ -177,7 +197,12 @@ export function useStructuredAgentSessionOptionState(args: {
         result,
         agentApiPresets ?? []
       )
-      if (!stale && optionMutationGeneration.current === readGeneration) {
+      if (
+        !stale &&
+        isCurrentContext() &&
+        activeOptionRecordRef.current === record &&
+        optionMutationGeneration.current === readGeneration
+      ) {
         setConversationSupport({
           sessionId,
           commands: result.conversationCommands ?? [],
@@ -194,7 +219,11 @@ export function useStructuredAgentSessionOptionState(args: {
             ? applyStructuredAgentSessionOptions(
                 current,
                 optionCatalog,
-                optionsWithConfiguredModels
+                optionsWithConfiguredModels,
+                {
+                  newLaunch,
+                  coherentCatalog
+                }
               )
             : current
         )
@@ -205,8 +234,12 @@ export function useStructuredAgentSessionOptionState(args: {
     return () => {
       stale = true
       runner.dispose()
+      optionsReadRef.current = null
     }
   }, [
+    newLaunch,
+    isCurrentContext,
+    coherentCatalog,
     fence,
     agent,
     agentApiPresets,
@@ -234,71 +267,56 @@ export function useStructuredAgentSessionOptionState(args: {
 
   // An options answer made before the account's listing landed listed none of it.
   const rereadOptions = useCallback(() => optionsReadRef.current?.run(), [])
+  const receiveCatalog = (
+    catalog: AgentSessionModelCatalogResult | null,
+    _event: 'demand' | 'progress' | 'settled'
+  ) => {
+    updateOptionState((current) =>
+      catalog && optionCatalog
+        ? applyStructuredAgentSessionModelCatalog(current, optionCatalog, catalog, {
+            newLaunch,
+            coherentCatalog
+          })
+        : settleStructuredAgentSessionBuiltinCatalog(current, false)
+    )
+    if (!coherentCatalog && catalog && catalog.origin !== 'unknown' && !catalog.listingInProgress) {
+      rereadOptions()
+    }
+  }
+  const beginOptionWrite = (_id: string) => {
+    const record = activeOptionRecordRef.current
+    writes.current.count += 1
+    return (readback: boolean) => {
+      if (!isCurrentContext() || activeOptionRecordRef.current !== record) {
+        return
+      }
+      writes.current.count -= 1
+      writes.current.readback ||= readback
+      if (!writes.current.count && writes.current.readback) {
+        rereadOptions()
+      }
+    }
+  }
   const takesSendOptions = useStructuredAgentSessionHostCapability(
     target,
     AGENT_SESSION_SEND_OPTIONS_RUNTIME_CAPABILITY
   )
-  // What the picker shows and a send carries, for this session's host.
-  const optionView = useCallback(
-    (
-      state: StructuredAgentSessionOptionState,
-      seed: Readonly<Record<string, string>> | undefined,
-      held: Readonly<Record<string, string>>
-    ) => {
-      const view = structuredAgentSessionOptionView(state, seed, held, takesSendOptions)
-      if (
-        !agentApiPresets.some((preset) =>
-          agent === 'orca-agent'
-            ? isOrcaAgentBridgeableApiPreset(preset)
-            : preset.connection.agent === agent
-        )
-      ) {
-        return view
-      }
-      const merged = includeConfiguredApiModelsInSessionOptions(
-        agent,
-        {
-          models: (view.catalog?.models ?? []).map((model) => ({
-            id: model.id,
-            label: model.label,
-            ...(model.provider ? { provider: model.provider } : {}),
-            isDefault: model.isDefault === true,
-            efforts: catalogModelEfforts(model)
-          })),
-          current: {}
-        },
-        agentApiPresets
-      )
-      if (!merged.models.length) {
-        return view
-      }
-      const existing = new Map(view.catalog?.models.map((model) => [model.id, model]) ?? [])
-      return {
-        ...view,
-        catalog: {
-          ...(view.catalog ?? { modelApply: {} }),
-          models: merged.models.map((model) => ({
-            ...(existing.get(model.id) ?? { id: model.id, options: [] }),
-            label: model.label,
-            ...(model.provider ? { provider: model.provider } : {})
-          }))
-        },
-        catalogSource:
-          view.catalogSource === 'seed' || view.catalogSource === null
-            ? ('host' as const)
-            : view.catalogSource,
-        permissionMode:
-          view.permissionMode ?? (agent === 'orca-agent' ? (defaultPermissionMode ?? 'ask') : null)
-      }
-    },
-    [agent, agentApiPresets, defaultPermissionMode, takesSendOptions]
-  )
-
   return {
-    optionView,
+    // What the picker shows and a send carries.
+    optionView: (...args: Parameters<typeof structuredAgentSessionOptionView>) => {
+      const view = configuredAgentApiOptionView(
+        agent,
+        structuredAgentSessionOptionView(...args),
+        agentApiPresets,
+        defaultPermissionMode
+      )
+      return pendingOptionsRef.current.model === undefined ? view : { ...view, pendingId: 'model' }
+    },
     takesSendOptions,
     conversationSupport,
-    rereadOptions,
+    receiveCatalog,
+    beginOptionWrite,
+    isCurrentContext,
     optionState,
     optionStateRef,
     activeOptionRecordRef,

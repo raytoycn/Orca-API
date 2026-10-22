@@ -63,6 +63,9 @@ export class RuntimeClientSettingsController {
     this.store.updateSettings(
       {
         ...updates,
+        ...(updates.nativeChatPermissionMode !== undefined
+          ? { agentNativeChatPermissionModes: {} }
+          : {}),
         ...(updates.defaultTuiAgent !== undefined ? { newWorkspaceSetupOnly: false } : {})
       },
       { notifyListeners: true }

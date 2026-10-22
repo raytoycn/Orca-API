@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ClaudeUsageDailyAggregate, ClaudeUsagePersistedState } from './types'
-import { buildSummary } from './claude-usage-report-aggregation'
+import { buildBreakdown, buildSummary } from './claude-usage-report-aggregation'
 
 function dailyRow(day: string, model: string): ClaudeUsageDailyAggregate {
   return {
@@ -91,5 +91,26 @@ describe('buildSummary unpriced models', () => {
 
     expect(summary.estimatedCostUsd).toBeNull()
     expect(summary.hasUnpricedModels).toBe(false)
+  })
+})
+
+describe('buildSummary Haiku 5.5 long-context requests', () => {
+  it('bills only the requests recorded over 100K at the long-context rates', () => {
+    const row = {
+      ...dailyRow('2026-10-15', 'claude-haiku-5-5'),
+      longContext: {
+        inputTokens: 500_000,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheWrite1hTokens: 0
+      }
+    }
+    const state = stateWithDaily([row])
+
+    // 500K input at $0.10 + 500K at $0.50 + 1M output at $0.50.
+    expect(buildSummary(state, 'all', 'all').estimatedCostUsd).toBeCloseTo(0.8)
+    expect(buildSummary(state, 'all', 'all').hasUnpricedModels).toBe(false)
+    expect(buildBreakdown(state, 'all', 'all', 'model')[0]?.estimatedCostUsd).toBeCloseTo(0.8)
   })
 })

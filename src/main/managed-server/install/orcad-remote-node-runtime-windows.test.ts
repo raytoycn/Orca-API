@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NODE_RUNTIME_ASSETS, NODE_RUNTIME_PIN } from '../../../shared/node-runtime-pin'
 import type { OrcadHostTransport } from '../../ssh/orcad-host-transport'
 import { execCommand } from '../../ssh/remote-exec/remote-exec-command'
-import { uploadRelayDirectory } from './remote-install-transfers'
+import { uploadRemoteInstallDirectory } from './remote-install-transfers'
 import {
   ensureRemoteOrcadNodeRuntime,
   NODE_RUNTIME_PROMOTE_TIMEOUT_MS,
@@ -29,7 +29,7 @@ vi.mock('../../ssh/remote-exec/remote-exec-command', async (importOriginal) => (
   ...(await importOriginal<typeof ExecCommandModule>()),
   execCommand: vi.fn()
 }))
-vi.mock('./remote-install-transfers', () => ({ uploadRelayDirectory: vi.fn() }))
+vi.mock('./remote-install-transfers', () => ({ uploadRemoteInstallDirectory: vi.fn() }))
 
 const host = getRemoteHostPlatform('win32-x64')
 const target = 'win32-x64'
@@ -47,7 +47,7 @@ function promoteScript(): string {
 
 beforeEach(() => {
   vi.mocked(execCommand).mockReset()
-  vi.mocked(uploadRelayDirectory).mockReset().mockResolvedValue(undefined)
+  vi.mocked(uploadRemoteInstallDirectory).mockReset().mockResolvedValue(undefined)
 })
 
 describe('Windows runtime store layout', () => {
@@ -190,7 +190,7 @@ describe('ensureRemoteOrcadNodeRuntime on Windows', () => {
     await ensureRemoteOrcadNodeRuntime({ conn, host, slotDir: relayDir, target, archivePath })
     expect(execCommand).toHaveBeenCalledTimes(1)
     expect(vi.mocked(execCommand).mock.calls[0][2]).toMatchObject({ wrapCommand: false })
-    expect(uploadRelayDirectory).not.toHaveBeenCalled()
+    expect(uploadRemoteInstallDirectory).not.toHaveBeenCalled()
   })
 
   /** Answers the probe, the store lock and the promote script by what each script does. */
@@ -226,7 +226,7 @@ describe('ensureRemoteOrcadNodeRuntime on Windows', () => {
     expect(stage).toMatch(
       /^C:\/Users\/u\/\.orca-remote\/runtimes\/\.stage-node-[0-9a-f]{64}-[0-9a-f]{16}$/
     )
-    expect(vi.mocked(uploadRelayDirectory).mock.calls[0][2]).toBe(stage)
+    expect(vi.mocked(uploadRemoteInstallDirectory).mock.calls[0][2]).toBe(stage)
     const locked = scripts.findIndex((s) => s.includes('CreateNew'))
     const promoted = scripts.findIndex((s) => s.includes('Invoke-OrcaPromote'))
     const released = scripts.findIndex(
@@ -252,7 +252,7 @@ describe('ensureRemoteOrcadNodeRuntime on Windows', () => {
 
   it('still removes the stage when the upload fails before promote runs', async () => {
     vi.mocked(execCommand).mockResolvedValueOnce(REMOTE_NODE_RUNTIME_MISSING).mockResolvedValue('')
-    vi.mocked(uploadRelayDirectory).mockRejectedValueOnce(new Error('sftp write failed'))
+    vi.mocked(uploadRemoteInstallDirectory).mockRejectedValueOnce(new Error('sftp write failed'))
     await expect(
       ensureRemoteOrcadNodeRuntime({ conn, host, slotDir: relayDir, target, archivePath })
     ).rejects.toThrow('sftp write failed')

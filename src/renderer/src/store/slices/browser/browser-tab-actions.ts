@@ -16,7 +16,7 @@ import {
   findWorkspace
 } from '../browser-page-records'
 import { getBrowserSessionProfileHostId } from './browser-host-state'
-import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { runtimeEnvironmentIdOrLocalUnlessTwin } from '@/lib/worktree-runtime-owner'
 import { admitBrowserPageMount } from '@/components/browser-pane/host-guest/browser-page-mount-admission'
 import { ownsGlobalSelection } from '../../global-selection-owner'
 import {
@@ -197,7 +197,7 @@ export function createBrowserTabActions(
         throw new Error(browserAvailability.reason)
       }
       const defaultUrl = state.browserDefaultUrl ?? 'about:blank'
-      const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(state, worktreeId)
+      const runtimeEnvironmentId = runtimeEnvironmentIdOrLocalUnlessTwin(state, worktreeId)
       if (browserAvailability.provider === 'paired-runtime') {
         if (!runtimeEnvironmentId) {
           throw new Error('The paired runtime browser provider is unavailable.')
@@ -250,7 +250,7 @@ export function createBrowserTabActions(
       if (browserAvailability.state !== 'enabled') {
         return false
       }
-      const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(state, worktreeId)
+      const runtimeEnvironmentId = runtimeEnvironmentIdOrLocalUnlessTwin(state, worktreeId)
       if (browserAvailability.provider === 'paired-runtime') {
         if (!runtimeEnvironmentId) {
           return false

@@ -826,7 +826,7 @@ this order:
 |---|---|---|
 | Dead-man tripped | runtime-status `admitModeEffective=db` under a reserve switch file | Exact |
 | Overrun | runtime-status `enforcedConnectionUnits` over `connectionCapacity.hardCap` | Invariant check: the ledger already refuses past its cap, so this trips only if that refusal broke. It counts seats, bookings, in-flight and phone units |
-| 503s | Director `request_count` 503s above max(1.5x background, background + 20) for 3 complete minutes | Proxy that can miss: fleet-wide, since no signal attributes a 503 to a cell, so a problem on one cell can stay under the fleet's line |
+| 503s | Director non-drain 503s (the roll ladder's measure: `request_count` 503s less the drain-return deferrals and the `host-rate-limited` and `host-in-flight` re-dials the director's `orca_relay_runtime_metrics` count) above max(1.5x background, background + 20) for 3 complete minutes, with at least 2 director instances each above an even share of that line (divided by the fewest instances that logged runtime metrics in any of those minutes, at least 2) in the same 3 minutes; or above max(10x background, 200) for 3 minutes with no instance split | Proxy that can miss: fleet-wide, since no signal attributes a 503 to a cell, so a problem on one cell can stay under the fleet's line. The instance split keeps one director instance whose database calls stall alone from flipping every watched cell back (10-21 07:55Z: 45, 164, 40 a minute, 54, 155, 5 of them on one instance) |
 | Duplicate past grace | The ledger reconcile's `orca_relay_reserve_ledger_seat_behind_row` for the cell, reported again more than 90 s (60 s demotion close + 30 s map lag) after it was first seen, keyed by director instance, cell, epoch and row epoch | Proxy that can only over-count: the line names no host, so two hosts sharing that key read as one seat |
 | Host drop | runtime-status `controls` fell more than 5% (and at least 10 hosts) within 5 minutes with no `draining` sample | Exact |
 | Ledger drift | Queued plus dropped rows in each director's newest `orca_relay_reserve_ledger_summary`, over the cell's controls, above 0.5% for 2 minutes | Proxy that can only over-count: the summaries are fleet-wide, so exact only while this is the only reserve cell |
@@ -837,7 +837,35 @@ newest minute any code has a point for is how far the series is published: a 503
 before it with no point had no 503s, so a quiet fleet reads zero. Minutes past it are left out, not
 counted; fewer than 3 published minutes in the read, no request series at all, or an unparseable
 timestamp is unverifiable. This assumes the codes publish together; one code lagging the others
-delays a trip by its lag but cannot hide one, because a later read sees its points. Until the
+delays a trip by its lag but cannot hide one, because a later read sees its points. A host's own
+early or duplicate re-dial says nothing about a cell and grows with traffic: on 2026-10-18 it was
+~98% of 503s and tripped c7 back twice with no fault. The subtraction is only trusted where the
+director logged: a judged minute no runtime-metrics line covers is unverifiable, a 10-minute read
+with fewer lines than a single instance logs (20) or at its entry limit is unverifiable, and the
+measured background leaves such minutes out (and is not measured with fewer than half of its 10
+metered). Coverage is any instance, not every one: an instance whose lines are missing while others
+log under-subtracts its re-dials, which can only push toward a trip, never hide one. The instance
+split counts each instance's own `/v1/assign` 503s from its runtime-metrics lines
+(`assign503sByCauseDelta`, by `labels.instanceId`; the metric names no instance), less that
+instance's own scheduled 503s. The fleet's non-drain 503s no instance's lines account for (Cloud
+Run's own, a route the director does not count, or an instance that stopped logging) are
+`unattributed`: summed over the 3 judged minutes, since an instance's 30 s lines skew against the
+fleet's minutes, and over the whole fleet line by themselves they trip (no one instance's stall
+explains them; the largest such sum in the 24 hours to 10-21 was 38, against 90). A stalled instance that also stops logging its lines therefore trips, on purpose: the 10-21 07:55Z instance kept logging through its stall. On the recorded 10-21 07:55Z stall this reads 40, 169, 5
+on the stalled instance, where Cloud Run's request log read 54, 155, 5. With a single director the
+share is half the line, so that one instance alone never trips between the lines. A judged minute
+with no instance count is unverifiable. A single instance id must hold its share for all 3
+minutes, so a fault that keeps replacing instances can pass under the broad line.
+
+Each sample makes one Cloud Logging read: the director's runtime metrics, its ledger summaries,
+the cell's seat-behind-row lines and, while the phone path is watched, the cell's own runtime
+metrics, as one OR filter split back client-side. The project allows 60 reads a minute shared by
+every watch and tool; on 2026-10-21 18:39Z twelve watches at about five reads a sample drew 429s
+until c21 and c22 tripped unverifiable. A read is ~200 lines (1,000 is one page and the limit); one
+truncated or failed after its retries makes every log-read rule unverifiable for that sample,
+which counts once toward the streak as any unreadable rule did. The 503 background and the phone
+background are each read once, on their own. The same measure is the
+background and `background-503-per-minute`. Until the
 minutes before `flipped-at` are published (3 minutes past it) the 503 rule is pending, which does
 not add to the streak. The duplicate read also takes `orca_relay_reserve_ledger_summary`, which
 every placing director logs each minute, in the same query and window: with no summary from the

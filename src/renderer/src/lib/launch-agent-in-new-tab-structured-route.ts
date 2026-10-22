@@ -29,7 +29,12 @@ export function launchStructuredAgentFromNewTab(args: {
   focusIntent?: NativeChatComposerFocusIntent
   beforeSurfaceOpen?: LaunchAgentInNewTabArgs['beforeSurfaceOpen']
   onHostDeclined?: () => StructuredLaunchTerminal
-  openTerminal: (terminalPlan: AgentSessionLaunchPlan) => {
+  openTerminal: (
+    terminalPlan: AgentSessionLaunchPlan,
+    activate?: false
+  ) => {
+    surface: AgentLaunchSurface
+    terminalCompletion?: StructuredLaunchTerminal['completion']
     promptDeliveryResult?: Promise<StructuredPromptDeliveryResult>
   } | null
 }): StructuredFromNewTab | null {
@@ -44,7 +49,7 @@ export function launchStructuredAgentFromNewTab(args: {
     target: { worktreeId: args.worktreeId },
     ...(args.groupId ? { targetGroupId: args.groupId } : {}),
     ...(args.activate !== undefined ? { activate: args.activate } : {}),
-    onHostDeclined: () => {
+    onHostDeclined: (_target, activate) => {
       if (args.onHostDeclined) {
         return args.onHostDeclined()
       }
@@ -54,10 +59,13 @@ export function launchStructuredAgentFromNewTab(args: {
           requestId: plan.requestId,
           agent: plan.agent,
           worktreeId: args.worktreeId
-        })
+        }),
+        activate
       )
       return {
         opened: terminal !== null,
+        ...(terminal?.surface.kind === 'local-terminal' ? { tabId: terminal.surface.tabId } : {}),
+        ...(terminal?.terminalCompletion ? { completion: terminal.terminalCompletion } : {}),
         ...(terminal?.promptDeliveryResult
           ? { promptDeliveryResult: terminal.promptDeliveryResult }
           : {})
@@ -66,7 +74,9 @@ export function launchStructuredAgentFromNewTab(args: {
   })
   return (
     launch && {
-      surface: { kind: 'host-published' },
+      surface: launch.tab
+        ? { kind: 'local-chat', tabId: launch.tab.id }
+        : { kind: 'host-published' },
       pasteDraftAfterLaunch: false,
       structuredSettlement: launch.settlement,
       ...(launch.promptDeliveryResult ? { promptDeliveryResult: launch.promptDeliveryResult } : {})

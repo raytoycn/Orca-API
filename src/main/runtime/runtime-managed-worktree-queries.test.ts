@@ -32,6 +32,7 @@ import {
   getLocalWorktreeScanGeneration,
   resetLocalWorktreeScanGenerationsForTests
 } from '../local-worktree-scan-generation'
+import type { HostWorktreeTarget } from '../../shared/worktree/host-qualified-identity'
 
 const settings = {
   workspaceDir: '/worktrees',
@@ -139,12 +140,13 @@ describe('RuntimeManagedWorktreeQueries.listDetected', () => {
 
   it('omits host-owned source defaults for clients that do not support them', async () => {
     const repo = folderRepo({ path: '/source/app' })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a partial store mock; the code under test reads only the members it defines.
     const store = {
       getRepos: () => [repo],
       getRepo: () => repo,
       getAllWorktreeMeta: () => ({}),
       getWorktreeMeta: () => undefined,
-      setWorktreeMeta: vi.fn((_id, updates) => metadata(updates)),
+      setWorktreeMeta: vi.fn((_target: HostWorktreeTarget, updates) => metadata(updates)),
       getAllWorktreeLineage: () => ({}),
       getSettings: () => ({
         ...settings,

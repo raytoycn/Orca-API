@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react'
 import { useAppStore } from '@/store'
-import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { runtimeEnvironmentIdOrLocalUnlessTwin } from '@/lib/worktree-runtime-owner'
 import { getWorkspaceFileRevealOwner } from '@/lib/reveal-in-file-manager'
 import { getRouteForLocalPathOpenOwner } from '@/lib/local-path-open-guard'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
@@ -51,7 +51,7 @@ function FileExplorerFiles(): React.JSX.Element {
   const searchPanel = useFileSearchPanel(explorerView)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const runtimeEnvironmentId = useAppStore((s) =>
-    getRuntimeEnvironmentIdForWorktree(s, activeWorktreeId)
+    runtimeEnvironmentIdOrLocalUnlessTwin(s, activeWorktreeId)
   )
   const wslHostUnavailable = useWslHostUnavailableReason(activeWorktreeId)
   const activeWorktree = useActiveWorktree()

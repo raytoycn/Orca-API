@@ -1,3 +1,4 @@
+import { beginEnclosingWorktreeRemoval } from '@/store/active-worktree-deselection-intent'
 import type { WorktreePurgeTarget, WorktreeSlice } from '../../worktree-helpers'
 import type { WorktreeSliceGet, WorktreeSliceSet } from '../listing/worktree-slice-types'
 import type { ProjectHostSetup } from '../../../../../../shared/project-types'
@@ -23,7 +24,7 @@ export function createPurgeStaleRuntimeHostState(
   set: WorktreeSliceSet,
   get: WorktreeSliceGet
 ): WorktreeSlice['purgeStaleRuntimeHostState'] {
-  return (removedEnvironmentIds) => {
+  const purge: WorktreeSlice['purgeStaleRuntimeHostState'] = (removedEnvironmentIds) => {
     const removed = new Set(removedEnvironmentIds)
     if (removed.size === 0) {
       return
@@ -305,5 +306,16 @@ export function createPurgeStaleRuntimeHostState(
         }),
       { settleFlags: false }
     )
+  }
+  return (ids) => {
+    const removed = [...ids]
+    const finishRemovals = removed.map((id) =>
+      beginEnclosingWorktreeRemoval({ hostId: toRuntimeExecutionHostId(id) })
+    )
+    try {
+      purge(removed)
+    } finally {
+      finishRemovals.forEach((finish) => finish())
+    }
   }
 }

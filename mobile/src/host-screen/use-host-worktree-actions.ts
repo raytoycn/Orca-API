@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { ORCA_SIDEBAR_INPUTS_IS_MAIN } from '../../../src/shared/sidebar-inputs-switch'
 import type { useRouter } from 'expo-router'
 import { floatingWorkspaceSessionPath } from '../session/floating-workspace'
 import { savePinnedIds } from '../storage/preferences'
@@ -19,6 +20,7 @@ import {
   isSameWorktreeRow,
   removeWorktreeRow
 } from '../worktree/worktree-host-row-identity'
+import { noteLastVisitedWorktree } from '../worktree/last-visited-worktree-by-host'
 import { isWorktreePinned, type Worktree } from '../worktree/workspace-list-sections'
 import {
   worktreeActivate,
@@ -95,6 +97,10 @@ export function useHostWorktreeActions(args: {
 
   const updateLocalPins = useCallback(
     (worktreeId: string, pinned: boolean) => {
+      // Switch point: a feed-built list keeps no pin cache of its own.
+      if (ORCA_SIDEBAR_INPUTS_IS_MAIN) {
+        return
+      }
       setPinnedIds((prev) => {
         const next = new Set(prev)
         if (pinned) {
@@ -252,7 +258,13 @@ export function useHostWorktreeActions(args: {
       if (routeHost === null) {
         return
       }
-      setOptimisticActiveWorktreeIdentity(getWorktreeRowIdentity(item))
+      // Switch point: a feed-built list highlights this phone's last visit, noted here because the
+      // session may open as another page whose stored write this list never sees.
+      if (!ORCA_SIDEBAR_INPUTS_IS_MAIN) {
+        setOptimisticActiveWorktreeIdentity(getWorktreeRowIdentity(item))
+      } else if (hostId) {
+        noteLastVisitedWorktree({ hostId, worktreeId: item.worktreeId, executionHost: routeHost })
+      }
       const rowClient = clientForRow(item)
       if (rowClient && connState === 'connected') {
         void worktreeActivate

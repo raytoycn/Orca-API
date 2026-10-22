@@ -10,7 +10,7 @@ const readWorkflow = (name) => parse(readFileSync(`.github/workflows/${name}.yml
 const windowsVet = readWorkflow('dev-channel-win-build').jobs['build-win'].steps.find(
   (step) => step.id === 'vetted'
 )
-const macSteps = readWorkflow('adhoc-mac-build').jobs['build-adhoc-mac'].steps
+const macSteps = readWorkflow('adhoc-mac-build').jobs['build-adhoc-mac-arch'].steps
 const macVet = macSteps.find((step) => step.id === 'vetted')
 const macCheckout = macSteps.find((step) => step.name === 'Checkout the requested ref')
 const directory = mkdtempSync(join(tmpdir(), 'workflow-ref-reachability-'))

@@ -1,3 +1,4 @@
+import { runEnclosingWorktreeRemoval } from '@/store/active-worktree-deselection-intent'
 import { isRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 import type { StateCreator } from 'zustand'
 import { toast } from 'sonner'
@@ -93,7 +94,7 @@ export function createRepoRemovalActions(
   set: Parameters<StateCreator<AppState>>[0],
   get: Parameters<StateCreator<AppState>>[1]
 ): Pick<RepoSlice, 'removeProject'> {
-  return {
+  const actions: Pick<RepoSlice, 'removeProject'> = {
     removeProject: async (projectId, options) => {
       try {
         // Why: exact host match only; the unique-candidate/focused fallbacks could pick another host's row (#13071).
@@ -178,7 +179,7 @@ export function createRepoRemovalActions(
         const repoPath = get().repos.find((repo) =>
           repoMatchesHostIdentity(repo, projectId, ownerHostId)
         )?.path
-        get().evictGitHubRepoCaches(projectId, repoPath)
+        get().evictGitHubRepoCaches(projectId, repoPath, ownerHostId)
         const { clearRepoSlugCacheEntry } = await import('../../lib/repo-slug-index')
         clearRepoSlugCacheEntry(projectId)
 
@@ -200,6 +201,7 @@ export function createRepoRemovalActions(
                   .flatMap((worktree) => (worktree.projectId ? [worktree.projectId] : []))
               ]
             : []
+        // Backstop for the host's sweep, which a spent budget or reloading graph can cut short.
         for (const wId of exclusiveWorktreeIds) {
           const tabs = get().tabsByWorktree[wId] ?? []
           for (const tab of tabs) {
@@ -308,5 +310,12 @@ export function createRepoRemovalActions(
         }
       }
     }
+  }
+  return {
+    removeProject: (projectId, options) =>
+      runEnclosingWorktreeRemoval(
+        options.automaticCleanup ? null : { hostId: options.hostId, repoId: projectId },
+        () => actions.removeProject(projectId, options)
+      )
   }
 }

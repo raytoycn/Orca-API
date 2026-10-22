@@ -1,8 +1,19 @@
+import { useEffect, useRef } from 'react'
 import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native'
-import { ChevronLeft, X } from 'lucide-react-native'
+import {
+  ChevronLeft,
+  FilePenLine,
+  Hand,
+  LockKeyhole,
+  ShieldAlert,
+  ShieldCheck,
+  X,
+  type LucideIcon
+} from 'lucide-react-native'
 import { BottomDrawer } from '../components/BottomDrawer'
 import { colors, radii, spacing, typography } from '../theme/mobile-theme'
 import {
+  isReadOnlySessionOptionValue,
   sessionOptionDispatchUnconfirmed,
   type SessionOptionDescriptor,
   type SessionOptionValue
@@ -24,7 +35,11 @@ import {
   showsSessionOptionAsSegments
 } from './MobileNativeChatSessionOptionSegments'
 import { sortNativeChatSessionOptions } from '../../../src/shared/native-chat-session-option-snapshot'
-import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../src/shared/agent-chat-permission-mode'
+import {
+  AGENT_CHAT_PERMISSION_MODE_ICON_NAMES,
+  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
+  isAgentChatPermissionMode
+} from '../../../src/shared/agent-chat-permission-mode'
 import type { MobileNativeChatSessionOptionsController } from './use-mobile-native-chat-session-options'
 
 export type MobileNativeChatPickerPresentation = { page: string | null; refocus: boolean }
@@ -55,6 +70,23 @@ function permissionChoiceColor(value: string | undefined): string | undefined {
   return value === 'full-access' ? colors.statusAmber : undefined
 }
 
+/** Undefined for a mode a newer host states that this build has no icon for. */
+function permissionModeIcon(value: string): LucideIcon | undefined {
+  if (!isAgentChatPermissionMode(value)) {
+    return undefined
+  }
+  switch (AGENT_CHAT_PERMISSION_MODE_ICON_NAMES[value]) {
+    case 'Hand':
+      return Hand
+    case 'FilePenLine':
+      return FilePenLine
+    case 'ShieldCheck':
+      return ShieldCheck
+    case 'ShieldAlert':
+      return ShieldAlert
+  }
+}
+
 function selectedChoice(descriptor: SessionOptionDescriptor | undefined) {
   return descriptor?.kind.type === 'select'
     ? descriptor.kind.choices.find((choice) => choice.value === descriptor.kind.currentValue)
@@ -71,6 +103,14 @@ export function MobileNativeChatSessionOptionPickers({
   onDrawerOpen,
   onDrawerAfterClose
 }: MobileNativeChatSessionOptionPickersProps & PresentationProps): React.JSX.Element | null {
+  const open = presentation?.page != null
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      controller.optionSurface?.demandModelCatalog?.()
+    }
+    wasOpen.current = open
+  }, [open, controller.optionSurface])
   const { snapshot, pendingId } = controller
   const model = snapshot.find((descriptor) => descriptor.category === 'model')
   const permission = snapshot.find(
@@ -91,6 +131,8 @@ export function MobileNativeChatSessionOptionPickers({
   const permissionChoice = selectedChoice(permission)
   const permissionColor = permissionChoiceColor(permissionChoice?.value)
   const fullAccess = permissionColor !== undefined
+  const permissionIcon =
+    !model && permissionChoice ? permissionModeIcon(permissionChoice.value) : undefined
   const segmentOptions = options.filter(showsSessionOptionAsSegments)
   const rowOptions = options.filter((descriptor) => !segmentOptions.includes(descriptor))
   const primary = model ? mobileModelPillLabel(model) : (permissionChoice?.label ?? 'Permissions')
@@ -131,6 +173,7 @@ export function MobileNativeChatSessionOptionPickers({
         primary={primary}
         secondary={secondary}
         warning={fullAccess}
+        icon={permissionIcon}
         accessibleName={
           model
             ? `Model, ${secondary ? `${primary} ${secondary}` : primary}${fullAccess ? ', full access' : ''}`
@@ -170,6 +213,17 @@ export function MobileNativeChatSessionOptionPickers({
                 ) : null}
               </View>
             </View>
+            {isWorking && !permissionView ? (
+              <View style={styles.lockNotice} accessibilityLiveRegion="polite">
+                <LockKeyhole size={16} color={colors.textSecondary} />
+                <View style={styles.lockNoticeBody}>
+                  <Text style={styles.lockNoticeTitle}>Agent is working</Text>
+                  <Text style={styles.lockNoticeDescription}>
+                    Model settings unlock when this turn finishes.
+                  </Text>
+                </View>
+              </View>
+            ) : null}
             {sessionOptionDispatchUnconfirmed(activeDescriptor) ? (
               <SessionOptionCaption>Sent to the agent — not confirmed</SessionOptionCaption>
             ) : null}
@@ -260,7 +314,9 @@ function OptionRows({
             valueColor={isPermission ? permissionColor : undefined}
             disabled={disabled}
             divided={index < descriptors.length - 1}
-            onPress={() => onNavigate(descriptor.id)}
+            onPress={
+              isReadOnlySessionOptionValue(descriptor) ? undefined : () => onNavigate(descriptor.id)
+            }
           />
         )
       })}
@@ -304,6 +360,26 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  lockNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg
+  },
+  lockNoticeBody: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  lockNoticeTitle: {
+    color: colors.textPrimary,
+    fontSize: typography.bodySize,
+    fontWeight: '600'
+  },
+  lockNoticeDescription: {
+    color: colors.textSecondary,
+    fontSize: typography.metaSize
   },
   group: {
     overflow: 'hidden',

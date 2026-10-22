@@ -8,8 +8,11 @@ const destination = join(root, 'resources/builtin-agents/orca-agent')
 const manifest = JSON.parse(
   readFileSync(join(source, 'node_modules/@deepseek-ai/dsh/package.json'), 'utf8')
 )
-if (manifest.version !== '0.2.0-rc.2') {
-  throw new Error('Expected DeepSeek Harness 0.2.0-rc.2')
+const expectedVersion = JSON.parse(
+  readFileSync(join(root, 'config/orca-agent-engine/package.json'), 'utf8')
+).dependencies['@deepseek-ai/dsh']
+if (manifest.version !== expectedVersion) {
+  throw new Error(`Expected DeepSeek Harness ${expectedVersion}`)
 }
 mkdirSync(destination, { recursive: true })
 cpSync(join(source, 'node_modules'), join(destination, 'node_modules'), { recursive: true })

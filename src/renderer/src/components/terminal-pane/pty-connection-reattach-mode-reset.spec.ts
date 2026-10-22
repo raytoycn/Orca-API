@@ -10,6 +10,7 @@ import {
   RESET_TERMINAL_CURSOR_STYLE
 } from '../../../../shared/terminal-mode-reset-profiles'
 import { replayEpilogue } from './pty-connection-test-replay-epilogue'
+import { STARTUP_CWD_FALLBACK_NOTICE } from '../../../../shared/startup-cwd-fallback'
 import { flushAsyncTicks } from './pty-connection-test-async'
 import {
   withMockedDocumentActiveElement,
@@ -354,7 +355,7 @@ export function registerPtyConnectionReattachModeResetTests(): void {
       )
     })
 
-    it('ignores the stale agent signal on a cold restore and applies the fresh-shell reset', async () => {
+    it.each([false, true])('cold restore fallback notice: %s', async (fallback) => {
       // Why: pane status and title are persisted, so after a cold restore they still
       // describe the process that died and make the pane look agent-owned. Preserving
       // "its" modes arms mouse/focus/paste reporting against the replacement shell,
@@ -366,7 +367,8 @@ export function registerPtyConnectionReattachModeResetTests(): void {
           return {
             id: sessionId,
             snapshot: '\x1b[?1003h\x1b[?1006h\x1b[?2004huser@host ~ $ ',
-            coldRestore: { scrollback: 'cold-payload', cwd: '/tmp/wt-1' }
+            coldRestore: { scrollback: 'cold-payload', cwd: '/tmp/wt-1' },
+            ...(fallback ? { startupCwdFallback: { kind: 'worktree', cwd: '/tmp/wt-1' } } : {})
           }
         }
         return null
@@ -395,6 +397,14 @@ export function registerPtyConnectionReattachModeResetTests(): void {
         )
         expect(writes).toContain(replayEpilogue(POST_REPLAY_MODE_RESET, 0))
         expect(writes).not.toContain(replayEpilogue(POST_REPLAY_LIVE_AGENT_REATTACH_RESET))
+        expect(writes.filter((data) => data === STARTUP_CWD_FALLBACK_NOTICE)).toHaveLength(
+          fallback ? 1 : 0
+        )
+        if (fallback) {
+          expect(writes.indexOf(STARTUP_CWD_FALLBACK_NOTICE)).toBeGreaterThan(
+            writes.indexOf(replayEpilogue(POST_REPLAY_MODE_RESET, 0))
+          )
+        }
       })
     })
 

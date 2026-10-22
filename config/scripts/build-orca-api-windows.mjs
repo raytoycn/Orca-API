@@ -55,6 +55,7 @@ if (
 }
 await run(process.execPath, ['config/scripts/prepare-orca-agent-engine.mjs'])
 await run(process.execPath, [pnpmCli, 'run', 'build:desktop'])
+await run(process.execPath, ['config/scripts/prepare-orca-api-native-runtime.mjs'])
 await run(process.execPath, [pnpmCli, 'run', 'ensure:electron-runtime'])
 
 // NSIS cannot open pnpm template paths longer than the Windows legacy path limit.

@@ -33,7 +33,8 @@ export const PR_CHECK_JOBS = [
   'managed_hook_node18',
   'package',
   'package_windows',
-  'layout_oracle'
+  'layout_oracle',
+  'dependency_isolation'
 ]
 
 const ALWAYS_ON_CODE_JOBS = new Set(['static_analysis', 'typecheck', 'test'])
@@ -158,6 +159,18 @@ const ORCAD_BROWSER_PREFIXES = [
 // The page bundle the desktop packages: the builder and verifier, the manifest writer and the
 // packaging guard they share, the entry, the route tree it mounts, the mobile source those routes
 // import, and the shell policy the render check runs the page under.
+// What decides which deps each package sees; package.json and the lockfile already force every job.
+const DEPENDENCY_ISOLATION_PREFIXES = [
+  'pnpm-workspace.yaml',
+  'config/pnpmfile.cjs',
+  'config/scripts/undeclared-dependency-resolution',
+  'config/build-plugins/markdown-parser-exports',
+  'config/tsconfig',
+  'src/packages/',
+  'native/windows-registry/package.json',
+  'native/windows-security/package.json'
+]
+
 const MOBILE_WEB_APP_PREFIXES = [
   'config/scripts/build-mobile-web-app',
   'config/scripts/run-mobile-web-app-checks',
@@ -217,6 +230,14 @@ const CROSS_VERSION_WIRE_PREFIXES = [
   'src/main/ai-vault/structured-session-ownership.ts',
   'src/main/native-chat/agent-session-journal/',
   'src/main/native-chat/agent-session-wire/',
+  // The released phone contract runs the current discovery owner and Claude producer.
+  'src/main/native-chat/agent-model-catalog/agent-model-catalog-entry.ts',
+  'src/main/native-chat/agent-model-catalog/agent-model-catalog-store.ts',
+  'src/main/native-chat/agent-model-catalog/agent-model-catalog-service.ts',
+  'src/main/native-chat/agent-model-catalog/agent-model-catalog-lister.ts',
+  'src/main/native-chat/agent-model-catalog/agent-model-catalog-listing-waiters.ts',
+  'src/main/native-chat/agent-model-catalog/agent-model-catalog-probe-runner.ts',
+  'src/main/claude/claude-model-catalog-probe.ts',
   'src/main/runtime/agent-session-record-store',
   'src/main/runtime/agent-session-recovery-capsule',
   'src/shared/agent-session-resume-marker',
@@ -281,6 +302,8 @@ const NATIVE_RUNTIME_PREFIXES = [
   'config/scripts/windows-process-tree-creation-time',
   'config/scripts/windows-process-tree-gyp-rebuild',
   'config/scripts/electron-builder-native-rebuild',
+  'config/scripts/native-build-entry',
+  'config/scripts/shared-native-build',
   'config/patches/node-pty@',
   'config/patches/@vscode__windows-process-tree'
 ]
@@ -292,7 +315,7 @@ const NATIVE_CACHE_FILES = new Set([
   '.github/actions/prepare-native-runtime/action.yml',
   'pnpm-workspace.yaml',
   '.npmrc',
-  '.pnpmfile.cjs',
+  'config/pnpmfile.cjs',
   'config/scripts/ensure-native-runtime.mjs',
   'config/scripts/initialize-windows-native-toolchain.mjs',
   'config/scripts/capture-windows-native-environment.cmd',
@@ -306,7 +329,11 @@ const NATIVE_CACHE_FILES = new Set([
   'config/scripts/zip-extractor-command.mjs',
   'src/shared/zip-extractor-command.ts',
   'config/scripts/shared-electron-dist-cache.mjs',
-  'config/scripts/space-sharing-copy.mjs'
+  'config/scripts/shared-tree-publish.mjs',
+  'config/scripts/space-sharing-copy.mjs',
+  'config/scripts/native-build-entry.cjs',
+  'config/scripts/native-build-entry-probe.cjs',
+  'config/scripts/shared-native-build.mjs'
 ])
 
 const NATIVE_CACHE_PREFIXES = [
@@ -321,6 +348,7 @@ const SHARED_PACKAGE_PREFIXES = [
   'electron.vite.config.ts',
   'config/electron-builder',
   'config/packaged-runtime',
+  'config/packaged-native-build-entries',
   'config/build-plugins/',
   'config/scripts/build-',
   'config/scripts/smoke-packaged',
@@ -425,6 +453,25 @@ export const STATIC_ANALYSIS_SCAN_ROOTS = readStaticAnalysisScanRoots()
 
 const STATIC_ANALYSIS_SCAN_PREFIXES = STATIC_ANALYSIS_SCAN_ROOTS.map((root) => `${root}/`)
 
+// Over-inclusive on purpose: a type oxfmt skips only costs this PR a static run.
+const FORMAT_CHECKED_EXTENSION =
+  /\.(?:[cm]?[jt]sx?|json[c5]?|css|less|scss|md|mdx|ya?ml|vue|html|graphql|gql|toml)$/i
+
+function readFormatIgnoredPrefixes() {
+  let config
+  try {
+    config = JSON.parse(readFileSync(join(import.meta.dirname, '../../.oxfmtrc.json'), 'utf8'))
+  } catch {
+    // Fail closed: with no ignores known, every formatted type keeps the gate.
+    return []
+  }
+  return (config.ignorePatterns ?? [])
+    .filter((pattern) => pattern.endsWith('/**'))
+    .map((pattern) => pattern.slice(0, -2))
+}
+
+const FORMAT_IGNORED_PREFIXES = readFormatIgnoredPrefixes()
+
 export function isDocsOnlyPath(file) {
   if (DOCS_ONLY_FILES.has(file)) {
     return true
@@ -494,7 +541,11 @@ export function classifyPrJobs(
   // Why outside should_run: a mobile-only diff is desktop-irrelevant and skips every job above,
   // but the repo-wide audits lint mobile/, and skipping them lands the violation on main, where
   // it then fails this same gate on every later PR's merge ref.
-  jobs.static_analysis = jobs.static_analysis || changedFiles.some(isStaticAnalysisScannedPath)
+  // Why formatted paths too: the formatting check reads the whole tree, so a docs-only diff that
+  // skipped it would land drift that then fails every later PR.
+  jobs.static_analysis =
+    jobs.static_analysis ||
+    changedFiles.some((file) => isStaticAnalysisScannedPath(file) || isFormatCheckedPath(file))
   // Why outside should_run, for the same reason: a mobile-only diff is desktop-irrelevant, and
   // that is exactly the diff that changes the page this job builds. Gated on should_run it would
   // skip on every PR that can break it and run on none.
@@ -546,6 +597,8 @@ function jobDetector(job) {
       return (files) => files.some(isWindowsPackagePath)
     case 'layout_oracle':
       return (files) => files.some(isLayoutOracleSource)
+    case 'dependency_isolation':
+      return (files) => files.some((file) => matchesPrefix(file, DEPENDENCY_ISOLATION_PREFIXES))
     default:
       return () => true
   }
@@ -595,6 +648,10 @@ function isStaticAnalysisScannedPath(file) {
   return (
     STATIC_ANALYSIS_SCAN_PREFIXES.length === 0 || matchesPrefix(file, STATIC_ANALYSIS_SCAN_PREFIXES)
   )
+}
+
+function isFormatCheckedPath(file) {
+  return FORMAT_CHECKED_EXTENSION.test(file) && !matchesPrefix(file, FORMAT_IGNORED_PREFIXES)
 }
 
 function isNativeCacheInputPath(file) {

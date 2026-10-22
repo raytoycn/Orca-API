@@ -4,15 +4,19 @@ import { applyBackgroundActivationPolicy } from '../window/foreground-activation
 import { applyElectronProxySettings } from '../network/proxy-settings'
 import { installElectronProxyRequestGuard } from '../network/electron-proxy-request-guard'
 import { handleElectronProxyLogin } from '../network/electron-proxy-credentials'
+import { setNodeDistMirrorSettingReader } from '../node-runtime/node-dist-mirror-setting'
+import { handleBrowserGuestLogin } from '../browser/browser-http-auth-prompt'
 import { installMainThreadHangWatchdog } from '../hang-watchdog/main-thread-hang-watchdog'
 import { preservePreviousHangDetection } from '../hang-watchdog/previous-hang-detection'
-import { browserCertificateTrustController } from '../browser/browser-manager'
+import { browserCertificateTrustController, browserManager } from '../browser/browser-manager'
+import { browserSiteDisplayController } from '../browser/browser-site-display-controller'
 import { ensureActiveOrcaProfile } from '../orca-profiles/profile-index-store'
 import { getCanonicalUserDataPath } from '../persistence'
 import { getAppEnvironment } from '../../shared/app-environment'
 import { loadWslMoveFence } from '../persistence/moving-wsl-projects/wsl-move-scope-guard'
 import { runGatedWslMoveDesktopRewritePass } from '../persistence/moving-wsl-projects/wsl-move-desktop-rewrite'
 import { createProfileStateStoreForStartup } from '../persistence/profile-state/profile-state-startup-authority'
+import { getProfileUserDataPath } from '../orca-profiles/profile-storage-paths'
 import { initializeBrowserClientHostId } from '../browser/browser-client-host-id'
 import { scheduleSecretProtectionGapReport } from '../host/deferred-secret-protection-report'
 import { withholdUnreachableKeychainForServe } from '../host/serve-keychain-guard'
@@ -36,7 +40,7 @@ import {
 } from '../browser/browser-session-proxy'
 import { installDocPreviewProtocolHandler } from '../browser/doc-preview-protocol'
 import { installMediaPreviewProtocolHandler } from '../media/media-preview-protocol'
-import { installJiraImageProtocolHandler } from '../jira/attachment-image-protocol'
+import { installJiraImageProtocolHandler } from '../jira/attachments/image-protocol'
 import { registerDocPreviewGrantHandlers } from '../ipc/doc-preview-grant-ipc'
 import { initializeBrowserSessionsForApp } from '../browser/browser-session-startup'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
@@ -69,6 +73,7 @@ export async function initializeReadyFoundation(): Promise<void> {
       callback,
       session.defaultSession
     )
+    handleBrowserGuestLogin(event, webContents, details, authInfo, callback)
   })
   const canonicalUserDataPath = getCanonicalUserDataPath()
   preservePreviousHangDetection(canonicalUserDataPath)
@@ -131,6 +136,7 @@ export async function initializeReadyFoundation(): Promise<void> {
   // read has to have happened by then or the renderer and the browser-host lease disagree.
   initializeBrowserClientHostId(profile.profileDirectory)
   const profileState = await createProfileStateStoreForStartup({
+    userDataPath: getProfileUserDataPath(),
     dataFile: profile.dataFile,
     databaseFile: profile.stateDatabaseFile,
     profileId: profile.profile.id,
@@ -147,6 +153,7 @@ export async function initializeReadyFoundation(): Promise<void> {
   }
   const store = profileState.store
   state.store = store
+  setNodeDistMirrorSettingReader(() => store.getSettings().nodeDistMirrorUrl)
   // Why before any handler or runtime: a project a WSL move is taking must never get a new terminal.
   loadWslMoveFence(getAppEnvironment().getPath('userData'))
   // Finishes a move that committed before a crash; gated off it does nothing, and it never throws.
@@ -285,6 +292,8 @@ export async function initializeReadyFoundation(): Promise<void> {
       return currentStore.getSshTargets().map((target) => target.id)
     }
   })
+  browserSiteDisplayController.followZoomSettings(store)
+  browserManager.setSiteDisplayController(browserSiteDisplayController)
   try {
     // Why: awaited here so the first guest navigation cannot race the installer's fire-and-forget write.
     await applyBrowserSessionProxies(browserSessionRegistry.listProfiles(), store.getSettings())

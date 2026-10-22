@@ -15,6 +15,7 @@ import type {
   TerminalRecoveryRemountResult
 } from '../../../terminals/terminal-tab-recovery-ledger'
 import { settleAttentionRemovedBy } from '../../workspace-attention/attention-removal-follow-up'
+import { selectWorktreesByRepo } from '../../../workspace-record-selectors'
 
 export function createSetRenamingWorktreeId(
   set: WorktreeSliceSet,
@@ -129,7 +130,7 @@ export function createAllWorktrees(
   _set: WorktreeSliceSet,
   get: WorktreeSliceGet
 ): WorktreeSlice['allWorktrees'] {
-  return () => Object.values(get().worktreesByRepo).flat()
+  return () => Object.values(selectWorktreesByRepo(get())).flat()
 }
 
 export function createGetKnownWorktreeById(

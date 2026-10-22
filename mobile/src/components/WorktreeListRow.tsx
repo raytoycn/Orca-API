@@ -9,6 +9,7 @@ import type { WorktreeCardDetails } from '../../../src/shared/worktree/card-prop
 import { isRemoteExecutionHostId } from '../../../src/shared/execution-host'
 import type { AgentActivityDisplayMode } from '../../../src/shared/ui-chrome-types'
 import { areStructurallyEqual } from '../worktree/structural-equality'
+import { projectGroupRowIndent } from '../worktree/project-group-indent'
 import { getWorktreeMetaGlyphPresence } from '../worktree/worktree-meta-glyph-presence'
 import { AgentSpinner } from './AgentSpinner'
 import { HostKindIcon } from './HostKindIcon'
@@ -64,6 +65,7 @@ function WorktreeListRowComponent({
   const folderMeta = item.comment?.trim() || item.path || 'Folder'
   const metaText = isFolderWorkspace ? folderMeta : displayBranch(item.branch)
   const lineageDepth = Math.max(0, item.lineageDepth ?? 0)
+  const indent = projectGroupRowIndent(item) + lineageDepth * 18
   const lineageChildCount = item.lineageChildCount ?? 0
   const shouldHideRepo = hideRepo && !item.showProjectName
   const showRepoChip = cardDetails.repoInTitle && !shouldHideRepo && !isFolderWorkspace
@@ -79,7 +81,7 @@ function WorktreeListRowComponent({
     <Pressable
       style={({ pressed }) => [
         styles.worktreeRow,
-        lineageDepth > 0 && { paddingLeft: spacing.lg + lineageDepth * 18 },
+        indent > 0 && { paddingLeft: spacing.lg + indent },
         item.isActive && styles.worktreeRowActive,
         pressed && styles.worktreeRowPressed
       ]}

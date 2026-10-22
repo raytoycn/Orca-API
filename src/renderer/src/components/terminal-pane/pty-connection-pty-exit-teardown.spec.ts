@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { sendTerminalInputThroughPane } from './pty-connection-test-dom'
 import { flushAsyncTicks } from './pty-connection-test-async'
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
+import { expectMainFrameClosesExitedSplitPaneOnce } from './pty-connection-test-exited-split-pane-close'
 import {
   LEAF_1,
   LEAF_2,
@@ -262,7 +264,11 @@ export function registerPtyConnectionPtyExitTeardownTests(): void {
 
       expect(deps.clearExitedPanePtyLayoutBinding).toHaveBeenCalledWith(2, 'pty-pane-2')
       expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
-      expect(manager.closePane).toHaveBeenCalledWith(2)
+      if (ORCA_LAYOUT_OWNER_IS_MAIN) {
+        await expectMainFrameClosesExitedSplitPaneOnce(manager)
+      } else {
+        expect(manager.closePane).toHaveBeenCalledWith(2)
+      }
     })
 
     it('keeps a worktree sole terminal mounted when its freshly-spawned PTY exits before input (direnv failure)', async () => {
@@ -761,7 +767,11 @@ export function registerPtyConnectionPtyExitTeardownTests(): void {
       capturedDataCallback.current?.('shell prompt')
       onPtyExit?.('pty-pane-2')
 
-      expect(manager.closePane).toHaveBeenCalledWith(2)
+      if (ORCA_LAYOUT_OWNER_IS_MAIN) {
+        await expectMainFrameClosesExitedSplitPaneOnce(manager)
+      } else {
+        expect(manager.closePane).toHaveBeenCalledWith(2)
+      }
     })
 
     it('removes the agent row when an established PTY exits through EOF (#12907)', async () => {
@@ -810,7 +820,11 @@ export function registerPtyConnectionPtyExitTeardownTests(): void {
       terminalInputHandler?.('exit\r')
       onPtyExit?.('pty-pane-2')
 
-      expect(manager.closePane).toHaveBeenCalledWith(2)
+      if (ORCA_LAYOUT_OWNER_IS_MAIN) {
+        await expectMainFrameClosesExitedSplitPaneOnce(manager)
+      } else {
+        expect(manager.closePane).toHaveBeenCalledWith(2)
+      }
     })
   })
 }

@@ -33,6 +33,8 @@ export type AgentSessionWriteKind =
   | 'answer'
   | 'option'
   | 'command'
+  /** Saving an edit of a queued message. */
+  | 'queued-edit'
   /** A /clear or /compact: refused while the agent works, in words of its own. */
   | 'clear'
   | 'compact'
@@ -61,6 +63,9 @@ export function agentSessionWriteKindForMethod(
   }
   if (fingerprintMethod === 'agentSession.threadGoal') {
     return 'goal'
+  }
+  if (fingerprintMethod === 'agentSession.queuedMessageUpdate') {
+    return 'queued-edit'
   }
   if (
     fingerprintMethod === 'agentSession.conversationCommand' &&

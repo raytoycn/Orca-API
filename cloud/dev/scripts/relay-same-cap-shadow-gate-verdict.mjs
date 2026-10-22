@@ -202,6 +202,7 @@ export function drainReturnByMinute(reads, limit) {
   const retries = new Map()
   const busy = new Map()
   const assignments = new Map()
+  const assign503s = new Map()
   let retryAfterSecondsMax = 0
   let truncated = false
   const charge = (map, endedAt, count) => {
@@ -225,6 +226,7 @@ export function drainReturnByMinute(reads, limit) {
       charge(retries, endedAt, ownRetries(sample))
       charge(busy, endedAt, rowBusy(sample))
       charge(assignments, endedAt, sample.drainReturnAssignmentsDelta ?? 0)
+      charge(assign503s, endedAt, Object.values(sample.assign503sByCauseDelta ?? {}).reduce((sum, count) => sum + count, 0))
       retryAfterSecondsMax = Math.max(
         retryAfterSecondsMax,
         sample.drainReturnRetryAfterSecondsMax ?? 0
@@ -241,6 +243,8 @@ export function drainReturnByMinute(reads, limit) {
   return {
     deferralsPerMinute: Object.fromEntries(deferrals),
     ownRetriesPerMinute: Object.fromEntries(retries),
+    // Every /v1/assign 503 the director logged, scheduled or not: the same count by instance.
+    assign503sPerMinute: Object.fromEntries(assign503s),
     deferralsTotal: sum(deferrals),
     deferralsPeakPerMinute: Math.round(Math.max(0, ...deferrals.values())),
     assignmentsTotal: sum(assignments),

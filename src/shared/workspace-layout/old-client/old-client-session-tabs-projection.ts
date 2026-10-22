@@ -18,7 +18,6 @@ import type {
   RuntimeMobileSessionTabGroup,
   RuntimeMobileSessionTabsSnapshot
 } from '../../runtime-session-contracts'
-import type { TabGroupLayoutNode } from '../../tab-types'
 import type { TerminalLayoutSnapshot } from '../../terminal-tab-types'
 import { pruneGroupLayout } from '../../workspace-session-terminal-tab-close'
 import {
@@ -27,12 +26,13 @@ import {
   terminalRowId
 } from './old-client-session-tab-rows'
 import { collectLayoutLeafIdsInOrder } from '../terminal-pane-tree'
+import { groupsInLayoutOrder } from './old-client-group-order'
 import {
   BLANK_BROWSER_TAB_STATE,
   type DesktopLayoutView,
   type LayoutContentFacts
 } from '../workspace-layout-beside'
-import { editorTabFile } from '../workspace-layout-editor-tab-file'
+import { editorFileKey, editorTabFile } from '../workspace-layout-editor-tab-file'
 import type {
   LayoutContentTab,
   LayoutTab,
@@ -143,21 +143,6 @@ function resolveActiveGroupId(
   return groupsInLayoutOrder(workspace)[0]?.id ?? null
 }
 
-function groupsInLayoutOrder(workspace: WorkspaceLayout): WorkspaceLayout['groups'] {
-  const ids: string[] = []
-  const visit = (node: TabGroupLayoutNode | undefined): void => {
-    if (node?.type === 'leaf') {
-      ids.push(node.groupId)
-    } else if (node) {
-      visit(node.first)
-      visit(node.second)
-    }
-  }
-  visit(workspace.groupLayout)
-  const placed = ids.flatMap((id) => workspace.groups.filter((group) => group.id === id))
-  return [...placed, ...workspace.groups.filter((group) => !placed.includes(group))]
-}
-
 function projectTab(tab: LayoutTab, scope: Scope): RuntimeMobileSessionSnapshotTab[] {
   switch (tab.kind) {
     case 'terminal':
@@ -225,8 +210,14 @@ function terminalRows(tab: LayoutTerminalTab, scope: Scope): RuntimeMobileSessio
       type: 'terminal',
       id: terminalRowId(tab.entityId, leafId),
       title,
+      // A paired desktop reads an absent name as "keep mine", so a cleared name is sent as null.
+      customTitle: tab.customTitle?.trim() || null,
       ...(tabWide && tab.quickCommandLabel?.trim()
         ? { quickCommandLabel: tab.quickCommandLabel.trim() }
+        : {}),
+      ...(tabWide && tab.aiVaultTitle?.title.trim() ? { aiVaultTitle: tab.aiVaultTitle } : {}),
+      ...(tabWide && scope.generatedTitlesEnabled && tab.generatedTitle?.trim()
+        ? { generatedTitle: tab.generatedTitle.trim() }
         : {}),
       parentTabId: tab.entityId,
       leafId,
@@ -267,7 +258,8 @@ function editorRow(
     title: file.relativePath.split(/[\\/]/).pop() || file.relativePath || 'File',
     filePath: file.filePath,
     relativePath: file.relativePath,
-    isDirty: scope.view.editorDrafts[scope.key]?.[file.filePath]?.dirtyDraftContent !== undefined,
+    isDirty:
+      scope.view.editorDrafts[scope.key]?.[editorFileKey(file)]?.dirtyDraftContent !== undefined,
     color: tab.color ?? null,
     isPinned: tab.isPinned === true,
     isActive: scope.activeTabId === tab.id

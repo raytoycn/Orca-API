@@ -18,6 +18,20 @@ import {
   type RuntimeEnvironmentCallRequest
 } from '../../runtime/runtime-compatibility-test-fixture'
 import { clearRuntimeCompatibilityCacheForTests } from '../../runtime/runtime-rpc-client'
+import { layoutApplyTestTransport } from '@/runtime/layout-apply-test-transport.test-fixture'
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
+
+// Main's answer to the window's layout commands, as a switch-on build sends them.
+vi.mock('@/runtime/runtime-rpc-client', async (importOriginal) =>
+  (
+    await import('@/runtime/layout-apply-test-transport.test-fixture')
+  ).runtimeRpcClientWithLayoutApply(await importOriginal())
+)
+vi.mock('@/runtime/runtime-layout-client', async (importOriginal) =>
+  (
+    await import('@/runtime/layout-apply-test-transport.test-fixture')
+  ).runtimeLayoutClientWithTestFrames(await importOriginal())
+)
 import { toRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 import type { BrowserWorkspace } from '../../../../shared/browser-workspace-types'
 import type { Tab } from '../../../../shared/tab-types'
@@ -76,6 +90,10 @@ function answerLikeRuntimeHost(args: RuntimeEnvironmentCallRequest): unknown {
 
 beforeEach(() => {
   clearRuntimeCompatibilityCacheForTests()
+  // A twin's editor close goes to main, which routes it to the host owning the copy; the window
+  // then closes its own copy as today.
+  layoutApplyTestTransport.reset()
+  layoutApplyTestTransport.answerWith({ refuse: 'host_not_owned' })
   ptyKill.mockReset()
   onRepoRemoved = null
   vi.stubGlobal('window', {
@@ -212,8 +230,15 @@ describe('removing a remote project keeps its local twin', () => {
     updateNativeChatComposerDraft('tab-local:leaf-1', { text: 'local chat draft' }, 'deferred')
 
     await store.getState().removeProject(PROJECT_ID, { hostId: REMOTE_HOST })
+    await layoutApplyTestTransport.settle()
 
     const state = store.getState()
+    // A layout-owner build asks main to close the removed host's editor tab first.
+    if (ORCA_LAYOUT_OWNER_IS_MAIN) {
+      expect(layoutApplyTestTransport.sentOfType('closeTabs')).toEqual([
+        { type: 'closeTabs', workspace: WORKTREE_ID, tabIds: ['editor:remote-file'] }
+      ])
+    }
     expect(state.repos).toEqual([localRow])
     expect(ptyKill).not.toHaveBeenCalledWith('pty-local')
     expect(state.tabsByWorktree[WORKTREE_ID]?.map((tab) => tab.id)).toEqual(['tab-local'])
@@ -285,6 +310,7 @@ describe('removing a remote project keeps its local twin', () => {
       }))
 
     await store.getState().removeProject(PROJECT_ID, { hostId: REMOTE_HOST })
+    await layoutApplyTestTransport.settle()
 
     const state = store.getState()
     expect(state.browserTabsByWorktree[WORKTREE_ID]?.map((tab) => tab.id)).toEqual([
@@ -480,6 +506,7 @@ describe('removing a remote project keeps its local twin', () => {
     }))
 
     await store.getState().removeProject(PROJECT_ID, { hostId: 'local' })
+    await layoutApplyTestTransport.settle()
 
     const state = store.getState()
     expect(

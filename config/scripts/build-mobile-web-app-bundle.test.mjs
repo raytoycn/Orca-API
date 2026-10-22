@@ -30,6 +30,7 @@ import {
   MOBILE_WEB_APP_SOURCE_DIRS,
   assertAssetCeilingFitsShell,
   mobileWebAppBundleMaxAssets,
+  mobileWebAppBundleBudgetBytes,
   mobileWebAppBundleMaxChunks,
   readMobileWebBundleMaxAssets,
   verifyMobileWebAppBundle
@@ -380,6 +381,41 @@ describeBundling('the app bundle', () => {
 })
 
 describe('the Phase C budget', () => {
+  it('reserves the font allowance only for the exact licensed symbol asset', async () => {
+    const font = hashedAsset(
+      await readFile(join(projectDir, 'mobile/assets/fonts/SymbolsNerdFontMono-Regular.woff2')),
+      'woff2'
+    )
+    const manifest = { totalBytes: font.byteLength + 123, assets: [font] }
+    expect(mobileWebAppBundleBudgetBytes(manifest)).toBe(123)
+    expect(
+      mobileWebAppBundleBudgetBytes({
+        ...manifest,
+        totalBytes: font.byteLength + MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES + 1
+      })
+    ).toBeGreaterThan(MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES)
+    expect(mobileWebAppBundleBudgetBytes({ totalBytes: 123, assets: [] })).toBe(123)
+    for (const change of [
+      { path: 'assets/another.woff2' },
+      { sha256: 'a'.repeat(64) },
+      { contentType: 'text/javascript' },
+      { byteLength: font.byteLength + 1 }
+    ]) {
+      expect(() =>
+        mobileWebAppBundleBudgetBytes({ ...manifest, assets: [{ ...font, ...change }] })
+      ).toThrow(/approved hash, path, MIME type and bounded byte length/)
+    }
+    expect(() => mobileWebAppBundleBudgetBytes({ ...manifest, assets: [font, font] })).toThrow(
+      /only one licensed terminal font/
+    )
+    expect(
+      mobileWebAppBundleBudgetBytes({
+        totalBytes: font.byteLength,
+        assets: [{ ...font, path: 'assets/code.js', contentType: 'text/javascript' }]
+      })
+    ).toBe(font.byteLength)
+  })
+
   it('sits below the contract per-asset ceiling, so growth trips a build not a phone', () => {
     expect(MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES).toBeLessThan(MOBILE_WEB_BUNDLE_MAX_ASSET_BYTES)
   })
@@ -389,7 +425,9 @@ describe('the Phase C budget', () => {
     async () => {
       const { manifest, chunkCount, entryStaticBytes, imageCount, routeKeys } =
         await readWrittenBundle()
-      expect(manifest.totalBytes).toBeLessThanOrEqual(MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES)
+      expect(mobileWebAppBundleBudgetBytes(manifest)).toBeLessThanOrEqual(
+        MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES
+      )
       expect(manifest.assets.length).toBeLessThanOrEqual(
         mobileWebAppBundleMaxAssets(routeKeys.length, imageCount)
       )

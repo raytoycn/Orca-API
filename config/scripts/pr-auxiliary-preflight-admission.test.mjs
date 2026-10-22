@@ -239,13 +239,13 @@ describe('Mobile CI tool preflight routing', () => {
     expect(evaluate(required.env.PREFLIGHT_SHOULD_RUN, context)).toBe(true)
   })
 
-  it('keeps workflow-only changes on their original skipped root route', () => {
+  // Static analysis only, for the whole-tree formatting check.
+  it('keeps workflow-only changes off the root unit and typecheck route', () => {
     const outputs = routedOutputs(['.github/workflows/mobile.yml'], 'false', verified)
     expect(outputs.mobile_ci_tools).toBe('false')
     expect(outputs.test).toBe('false')
-    expect(outputs.static_analysis).toBe('false')
+    expect(outputs.static_analysis).toBe('true')
     expect(outputs.typecheck).toBe('false')
-    expect(evaluate(workflow.jobs.preflight.if, { needs: { code_paths: { outputs } } })).toBe(false)
   })
 
   it('keeps root shard execution enabled for callers that do not opt out', () => {

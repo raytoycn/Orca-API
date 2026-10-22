@@ -44,6 +44,36 @@ export function mobileWebAppBundleMaxAssets(routeCount, imageCount) {
  */
 export const MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES = 9 * 1024 * 1024
 
+// Only this licensed desktop-identical asset has its own allowance; code retains the 9 MiB fence.
+export const MOBILE_WEB_APP_TERMINAL_FONT_MAX_BYTES = 1200 * 1024
+const TERMINAL_FONT_SHA256 = '8efa6ba89f0a1f3eefde028f36aa64a13e36282e15ea0ca6929c664501037467'
+const TERMINAL_FONT_BYTES = 1_177_916
+
+export function mobileWebAppBundleBudgetBytes(manifest) {
+  const fonts = manifest.assets.filter(
+    (asset) => asset.path.endsWith('.woff2') || asset.contentType.startsWith('font/')
+  )
+  if (fonts.length > 1) {
+    fail('only one licensed terminal font may use the independent font allowance')
+  }
+  const font = fonts[0]
+  if (!font) {
+    return manifest.totalBytes
+  }
+  if (
+    font.path !== `assets/${TERMINAL_FONT_SHA256}.woff2` ||
+    font.sha256 !== TERMINAL_FONT_SHA256 ||
+    font.contentType !== 'font/woff2' ||
+    font.byteLength !== TERMINAL_FONT_BYTES ||
+    font.byteLength > MOBILE_WEB_APP_TERMINAL_FONT_MAX_BYTES
+  ) {
+    fail(
+      'terminal font allowance requires the approved hash, path, MIME type and bounded byte length'
+    )
+  }
+  return manifest.totalBytes - font.byteLength
+}
+
 /**
  * Scripts emitted at every prefix of the sorted route key list, and the route each prefix added.
  *
@@ -222,9 +252,10 @@ export async function verifyMobileWebAppBundle({ bundleDir = defaultBundleDir } 
 
   const manifest = assertMobileWebBundleBuilt(bundleDir)
 
-  if (manifest.totalBytes > MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES) {
+  const budgetBytes = mobileWebAppBundleBudgetBytes(manifest)
+  if (budgetBytes > MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES) {
     fail(
-      `bundle is ${String(manifest.totalBytes)} bytes, over the Phase C budget of ` +
+      `bundle excluding the approved font is ${String(budgetBytes)} bytes, over the Phase C budget of ` +
         `${String(MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES)}`
     )
   }
@@ -275,7 +306,8 @@ if (isDirectInvocation(import.meta.url, process.argv[1])) {
     const manifest = await verifyMobileWebAppBundle()
     console.log(
       `[verify-mobile-web-app-bundle] OK — ${String(manifest.assets.length)} asset(s), ` +
-        `${String(manifest.totalBytes)}/${String(MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES)} bytes, ` +
+        `${String(manifest.totalBytes)} total bytes, ` +
+        `${String(mobileWebAppBundleBudgetBytes(manifest))}/${String(MOBILE_WEB_APP_BUNDLE_MAX_TOTAL_BYTES)} bytes excluding the approved font, ` +
         `reproducible buildId ${manifest.buildId}`
     )
   } catch (error) {

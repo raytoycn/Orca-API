@@ -12,7 +12,7 @@ import {
   activateClientSessionTabSelection,
   deriveClientSessionTabSelection,
   projectClientSessionTabSelection
-} from '../../client-session-tab-selection'
+} from '../../client-session-tab-selection-projection'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import {
   agentProviderSessionsEqual,

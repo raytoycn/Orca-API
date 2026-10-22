@@ -19,6 +19,7 @@ import {
   writeRuntimeEnvironmentSidecarEntry
 } from './runtime-environment-sidecar'
 import { resolveEnvironmentFromStore } from './runtime-environment-store'
+import { findCollidingEnvironmentName } from './runtime-environment-name-collision'
 
 /** Registers a server Orca deployed over SSH, paired through its own loopback tunnel. */
 export function addManagedOrcadEnvironment(
@@ -42,10 +43,11 @@ export function addManagedOrcadEnvironment(
       `A server with id "${args.id}" already exists.`
     )
   }
-  if (known.some((entry) => entry.name === args.name)) {
+  const namesake = findCollidingEnvironmentName(known, args.name)
+  if (namesake) {
     throw new RuntimeEnvironmentStoreError(
       'invalid_argument',
-      `A server named "${args.name}" already exists.`
+      `A server named "${namesake.name}" already exists.`
     )
   }
   const environment = createEnvironmentFromPairingOffer({
@@ -79,7 +81,7 @@ export function addManagedOrcadEnvironment(
   if (!registered?.orcadDeployment) {
     throw new RuntimeEnvironmentStoreError(
       'runtime_error',
-      'The managed server was saved without its deployment link.'
+      'This host’s Orca server was saved without its deployment link.'
     )
   }
   return registered

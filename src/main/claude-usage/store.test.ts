@@ -480,17 +480,24 @@ describe('ClaudeUsageStore', () => {
         outputTokens: 300_000,
         cacheReadTokens: 300_000,
         cacheWriteTokens: 300_000,
-        cacheWrite1hTokens: 0
+        cacheWrite1hTokens: 0,
+        longContext: {
+          inputTokens: 300_000,
+          outputTokens: 300_000,
+          cacheReadTokens: 300_000,
+          cacheWriteTokens: 300_000,
+          cacheWrite1hTokens: 0
+        }
       }))
     })
 
     const breakdown = await store.getBreakdown('orca', '30d', 'model')
 
-    // Why: the 4.5 tier premium only survives if `-4-5-` never matches the `-5`
-    // family regex, so this doubles as the digit-boundary proof for both families.
+    // Why: the 4.5 long-context premium only applies if `-4-5-` never matches the `-5`
+    // family pattern, so this doubles as the digit-boundary proof for both families.
     expect(
       breakdown.find((row) => row.key === 'claude-sonnet-4-5-20250929')?.estimatedCostUsd
-    ).toBeCloseTo(8.07)
+    ).toBeCloseTo(10.98)
     // Why: Opus 4.5 and Opus 5 share rates today, so this pins the rate rather
     // than the routing — it fails only if the two ever diverge.
     expect(

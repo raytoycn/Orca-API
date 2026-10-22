@@ -222,7 +222,7 @@ export async function readDirectorRequestsByCodePerMinute(reader, { config, span
 // textPayload filter matches nothing here and returns zero without saying so.
 const CELL_LOG_SCOPE = 'resource.type="gce_instance" AND logName:"cos_containers"'
 
-const DIRECTOR_DRAIN_FIELDS = [
+export const DIRECTOR_DRAIN_FIELDS = [
   'stickyRejectionsByReasonDelta',
   'placementRejectionsByReasonDelta',
   'drainReturnDeferralsDelta',
@@ -232,10 +232,16 @@ const DIRECTOR_DRAIN_FIELDS = [
 ]
 
 // Five instances at one sample per 30 s is ~100 per 10-min sub-window; this many is truncation.
-const DIRECTOR_METRICS_LIMIT = 1000
+export const DIRECTOR_METRICS_LIMIT = 1000
 
-async function readDirectorDrainReturn(reader, { config, window }) {
-  const projection = `json(timestamp,${DIRECTOR_DRAIN_FIELDS
+export const directorMetricsSample = (entry) => ({
+  timestamp: entry.timestamp,
+  instanceId: entry.labels?.instanceId,
+  ...entry.jsonPayload
+})
+
+export async function readDirectorDrainReturn(reader, { config, window }) {
+  const projection = `json(timestamp,labels.instanceId,${DIRECTOR_DRAIN_FIELDS
     .map((field) => `jsonPayload.${field}`)
     .join(',')})`
   const reads = []
@@ -250,7 +256,7 @@ async function readDirectorDrainReturn(reader, { config, window }) {
     })
     reads.push({
       failed: read.failed,
-      samples: read.entries.map((entry) => ({ timestamp: entry.timestamp, ...entry.jsonPayload })),
+      samples: read.entries.map(directorMetricsSample),
       minSamples: Math.floor(
         (subWindow.endedAt.getTime() - subWindow.startedAt.getTime()) / DIRECTOR_METRICS_INTERVAL_MS
       )

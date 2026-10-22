@@ -62,7 +62,9 @@ module.exports = {
     )
     const architecture = { 0: 'ia32', 1: 'x64', 3: 'arm64' }[context.arch]
     if (
-      engine.version !== '0.2.0-rc.2' ||
+      engine.version !==
+        JSON.parse(readFileSync(path.join(root, 'config/orca-agent-engine/package.json'), 'utf8'))
+          .dependencies['@deepseek-ai/dsh'] ||
       engine.platform !== context.electronPlatformName ||
       engine.arch !== architecture
     ) {

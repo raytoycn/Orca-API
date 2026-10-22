@@ -9,7 +9,8 @@ import type { RemoteInstallTransport } from './remote-install-transport'
 import { RELAY_REMOTE_DIR } from '../../ssh/remote-exec/remote-frame-protocol'
 import { execHostCommand } from '../../ssh/remote-exec/remote-host-exec'
 import { probeInstallLockExistsCommand } from './remote-install-lock-commands'
-import { isRelayInstallLockStale, RELAY_INSTALL_LOCK_NAME } from './remote-install-lock'
+import { RELAY_INSTALL_LOCK_NAME } from '../../../shared/relay-install-lock-name'
+import { isRelayInstallLockStale } from './remote-install-lock'
 import {
   remoteInstallGcPermits,
   remoteInstallVersionDirRegex,

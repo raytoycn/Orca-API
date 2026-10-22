@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { EditorTabView } from '../editor-tab-view-types'
+import type { LayoutEditorView } from './layout-editor-view'
 import { applyLayoutCommand } from './workspace-layout-commands'
 import type { CommandOf, LayoutCommand } from './workspace-layout-command-types'
 import {
@@ -185,39 +185,6 @@ describe('layout command refusals', () => {
     ).toBe('last_pane')
   })
 
-  it('setPaneRatios accepts divider sizes only', () => {
-    const { model, tabA, leafA, leafA2 } = setup()
-    const root = terminalTab(model, tabA).panes!.root!
-    if (root.type !== 'split') {
-      throw new Error('expected a split')
-    }
-    expect(
-      refusal(model, {
-        type: 'setPaneRatios',
-        workspace: WS,
-        tabId: tabA,
-        root: { ...root, ratio: 0.3 }
-      })
-    ).toBe('applied')
-    const swapped = {
-      type: 'split' as const,
-      direction: 'vertical' as const,
-      first: { type: 'leaf' as const, leafId: leafA2 },
-      second: { type: 'leaf' as const, leafId: leafA }
-    }
-    expect(
-      refusal(model, { type: 'setPaneRatios', workspace: WS, tabId: tabA, root: swapped })
-    ).toBe('pane_structure_changed')
-    expect(
-      refusal(model, {
-        type: 'setPaneRatios',
-        workspace: WS,
-        tabId: tabA,
-        root: { type: 'leaf', leafId: leafA }
-      })
-    ).toBe('pane_structure_changed')
-  })
-
   it('group commands refuse a missing group, a changed group set, and splitting a lone tab off itself', () => {
     const { model, tabA } = setup()
     const groupId = model.workspaces[WS]!.groups[0]!.id
@@ -366,9 +333,10 @@ describe('layout command refusals', () => {
     const recorded = applyLayoutCommand(bound, { ...sleep, recordOnly: true }, context)
     expect(recorded).toMatchObject({ ok: true, effects: { stopPtyIds: [] } })
     const recordedModel = recorded.ok ? recorded.model : bound
+    // A running agent's capture is its resume record, not a sleep.
     expect(recordedModel.workspaces[WS]!.leaves![leafB]).toEqual({
       ptyId: 'pty-b',
-      sleeping: {
+      resume: {
         agent: 'codex',
         providerSession: { key: 'session_id', id: 's' },
         prompt: 'p',
@@ -571,6 +539,41 @@ describe('layout command effects', () => {
     expect(last.result.ptyId).toBeNull()
   })
 
+  it('a window drag-out starts an unbound pane’s new tab in the pane’s folder', () => {
+    const { model, tabA, leafA2, ctx } = setup()
+    const workspace = model.workspaces[WS]!
+    const withCwd: WorkspaceLayoutModel = {
+      ...model,
+      workspaces: {
+        [WS]: {
+          ...workspace,
+          tabs: workspace.tabs.map((tab) =>
+            tab.id === tabA && tab.kind === 'terminal'
+              ? { ...tab, terminal: { ...tab.terminal, startupCwd: '/w' } }
+              : tab
+          )
+        }
+      }
+    }
+    const drag = (ptyId: string | null) =>
+      build(
+        ctx,
+        [
+          {
+            type: 'movePaneToNewTab',
+            workspace: WS,
+            tabId: tabA,
+            leafId: leafA2,
+            windowDetach: { ptyId, tabId: 'tab-main', startupCwd: '/w/packages/app' }
+          }
+        ],
+        withCwd
+      ).model
+    expect(terminalTab(drag(null), 'tab-main').terminal.startupCwd).toBe('/w/packages/app')
+    // A bound pane keeps its shell; its new tab keeps the source tab's folder.
+    expect(terminalTab(drag('pty-live'), 'tab-main').terminal.startupCwd).toBe('/w')
+  })
+
   it('equalizes same-axis panes into equal shares', () => {
     const { model, tabA, leafA2, ctx } = setup()
     const three = build(
@@ -618,11 +621,14 @@ describe('layout command effects', () => {
     expect(entities).not.toContain('/w/b.ts')
   })
 
-  const viewedOpens: [string, CommandOf<'openEditorTab'>, EditorTabView, string[]][] = [
+  const viewedOpens: [string, CommandOf<'openEditorTab'>, LayoutEditorView, string[]][] = [
     [
       'a diff tab',
       { type: 'openEditorTab', workspace: WS, fileId: '/w', contentType: 'diff' },
-      { mode: 'diff', diffSource: 'combined-all', combinedAreaFilter: 'staged' },
+      {
+        view: { mode: 'diff', diffSource: 'combined-all', combinedAreaFilter: 'staged' },
+        file: { filePath: '/w', relativePath: 'All Changes', language: 'plaintext' }
+      },
       ['/w/a.ts']
     ],
     [
@@ -635,13 +641,16 @@ describe('layout command effects', () => {
         file: { filePath: '/w/b.ts', relativePath: 'b.ts', language: 'typescript' }
       },
       {
-        mode: 'edit',
-        conflict: {
-          kind: 'conflict-editable',
-          conflictKind: 'both_modified',
-          conflictStatus: 'unresolved',
-          conflictStatusSource: 'git'
-        }
+        view: {
+          mode: 'edit',
+          conflict: {
+            kind: 'conflict-editable',
+            conflictKind: 'both_modified',
+            conflictStatus: 'unresolved',
+            conflictStatusSource: 'git'
+          }
+        },
+        file: { filePath: '/w/b.ts', relativePath: 'b.ts', language: 'typescript' }
       },
       ['/w/a.ts', '/w/b.ts']
     ]

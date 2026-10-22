@@ -110,7 +110,16 @@ it('offers all APIs and models before the first message and holds the selected r
   await act(async () => {
     expect(await result.current.setStructuredOption('model', choice)).toBe(true)
   })
-  expect(mocks.hold).toHaveBeenCalledWith('api-model-test', 'model', choice)
+  expect(mocks.hold).toHaveBeenCalledWith(
+    'api-model-test',
+    'model',
+    choice,
+    expect.objectContaining({
+      catalog: expect.objectContaining({
+        models: expect.arrayContaining([expect.objectContaining({ id: choice })])
+      })
+    })
+  )
   const permission = result.current.optionSnapshot.find((entry) => entry.id === 'permissionMode')
   expect(
     permission?.kind.type === 'select' ? permission.kind.choices.map((entry) => entry.value) : []

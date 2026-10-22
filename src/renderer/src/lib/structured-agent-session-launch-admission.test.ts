@@ -105,7 +105,9 @@ describe('a structured chat launch on a paired server', () => {
       failureNotified: false
     })
     expect(onHostDeclined).toHaveBeenCalledOnce()
-    expect(mocks.toastInfo).toHaveBeenCalledOnce()
+    expect(mocks.toastInfo).toHaveBeenCalledWith(expect.any(String), {
+      description: expect.stringContaining("can't run")
+    })
     expect(useAppStore.getState().activeWorktreeId).toBe(WORKTREE)
     expectNoChatCommitted()
   })
@@ -215,7 +217,11 @@ describe('a structured chat launch on a paired server', () => {
         'claude'
       )
       expect(settlement).toEqual(expect.objectContaining({ kind: 'failed', notified: true }))
-      expect(mocks.toastError).toHaveBeenCalledTimes(1)
+      expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('Claude'), {
+        description: expect.stringMatching(
+          kind === 'unverified' ? /confirm the host's permissions for Claude/ : /older Orca/
+        )
+      })
       expect(mocks.launchAgentInNewTab).not.toHaveBeenCalled()
       expectNoChatCommitted()
     }
@@ -265,7 +271,7 @@ describe('a structured chat launch on this machine', () => {
       delivered: true,
       failureNotified: false
     })
-    expect(onHostDeclined).toHaveBeenCalledExactlyOnceWith({ kind: 'local' })
+    expect(onHostDeclined).toHaveBeenCalledExactlyOnceWith({ kind: 'local' }, undefined)
     expect(mocks.toastInfo).not.toHaveBeenCalled()
     expect(mocks.toastError).not.toHaveBeenCalled()
     expectNoChatCommitted()
@@ -428,4 +434,28 @@ describe('a paired server that cannot resolve a new workspace yet', () => {
     await expect(launch?.settlement).resolves.toEqual({ kind: 'terminal' })
     expect(onHostDeclined).toHaveBeenCalledOnce()
   })
+})
+
+it('keeps explicit refusal owned by admission and keeps an opened chat failure out of the menu', async () => {
+  for (const supported of [false, true]) {
+    mocks.toastError.mockClear()
+    mocks.createSupport.mockResolvedValue({ supported, reason: 'wsl' })
+    const plan = adoptAgentSessionLaunchVerdict({ ...pairedPlan(), requestedSurface: 'chat' })
+    if (supported) {
+      mocks.createSupport
+        .mockResolvedValueOnce({ supported: true })
+        .mockResolvedValueOnce({ supported: false })
+    }
+    const onHostDeclined = vi.fn()
+    const launch = beginStructuredAgentSessionProvisionalLaunch({ plan, hooks: {}, onHostDeclined })
+    await expect(launch?.settlement).resolves.toMatchObject({ kind: 'failed' })
+    expect(onHostDeclined).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledTimes(supported ? 0 : 1)
+    if (!supported) {
+      await expect(launch?.promptDeliveryResult).resolves.toMatchObject({
+        delivered: false,
+        failureNotified: true
+      })
+    }
+  }
 })

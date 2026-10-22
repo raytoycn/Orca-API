@@ -92,6 +92,7 @@ function LocalAgentLaunchSettings({
       detectionTarget={LOCAL_DETECTION_TARGET}
       hostName={null}
       renderPermissions={renderPermissions}
+      nativeChatPermissionsSupported
       local={{ settings, updateSettings }}
     />
   )

@@ -9,6 +9,7 @@ import { ensureBrowserClientHostsForRestoredPages } from '@/runtime/restored-cli
 import { findWorkspace } from '../browser-page-records'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../../shared/layout-owner-switch'
 import { recordLayoutApply } from '@/runtime/layout-apply-send'
+import { selectFolderWorkspaces } from '../../workspace-record-selectors'
 
 export function createBrowserHydrationActions(
   set: BrowserSliceSet,
@@ -23,7 +24,7 @@ export function createBrowserHydrationActions(
         Object.keys(persistedTabsByWorktree)
       )
       validWorktreeIdsForCleanup.add(FLOATING_TERMINAL_WORKTREE_ID)
-      for (const workspace of currentState.folderWorkspaces) {
+      for (const workspace of selectFolderWorkspaces(currentState)) {
         validWorktreeIdsForCleanup.add(folderWorkspaceKey(workspace.id))
       }
       addAdditionalValidWorkspaceKeys(validWorktreeIdsForCleanup, options)
@@ -47,7 +48,7 @@ export function createBrowserHydrationActions(
           Object.keys(persistedTabsByWorktree)
         )
         validWorktreeIds.add(FLOATING_TERMINAL_WORKTREE_ID)
-        for (const workspace of s.folderWorkspaces) {
+        for (const workspace of selectFolderWorkspaces(s)) {
           validWorktreeIds.add(folderWorkspaceKey(workspace.id))
         }
         addAdditionalValidWorkspaceKeys(validWorktreeIds, options)

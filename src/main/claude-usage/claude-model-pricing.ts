@@ -1,4 +1,12 @@
-type ClaudeModelPricing = {
+import {
+  addTokenTotals,
+  minTokenTotals,
+  NO_TOKENS,
+  type ClaudeBillableTokens
+} from './claude-billable-tokens'
+import type { ClaudeUsageTokenTotals } from './types'
+
+type ClaudeTokenRates = {
   input: number
   output: number
   cacheRead: number
@@ -6,23 +14,23 @@ type ClaudeModelPricing = {
   cacheWrite: number
   /** 1-hour TTL cache write (2x base input). */
   cacheWrite1h: number
-  thresholdTokens?: number
-  inputAboveThreshold?: number
-  outputAboveThreshold?: number
-  cacheReadAboveThreshold?: number
-  cacheWriteAboveThreshold?: number
-  cacheWrite1hAboveThreshold?: number
 }
 
-const LONG_CONTEXT_THRESHOLD_TOKENS = 200_000
-const SONNET_LONG_CONTEXT_PRICING = {
-  thresholdTokens: LONG_CONTEXT_THRESHOLD_TOKENS,
-  inputAboveThreshold: 6,
-  outputAboveThreshold: 22.5,
-  cacheReadAboveThreshold: 0.6,
-  cacheWriteAboveThreshold: 7.5,
-  cacheWrite1hAboveThreshold: 12
-} satisfies Partial<ClaudeModelPricing>
+type ClaudeModelPricing = ClaudeTokenRates & {
+  /** Rates for a whole request whose prompt (input plus cache reads and writes) exceeds
+   *  `thresholdTokens`. Why: turns are classified when scanned, so adding or changing a tier needs
+   *  CLAUDE_USAGE_PROJECTION_VERSION bumped for saved history to rescan. */
+  longContext?: ClaudeTokenRates & { thresholdTokens: number }
+}
+
+const SONNET_4_LONG_CONTEXT = {
+  thresholdTokens: 200_000,
+  input: 6,
+  output: 22.5,
+  cacheRead: 0.6,
+  cacheWrite: 7.5,
+  cacheWrite1h: 12
+}
 
 // Mythos models are billed at their Fable counterparts' rates.
 const FABLE_5_1_PRICING: ClaudeModelPricing = {
@@ -43,8 +51,6 @@ const FABLE_5_PRICING: ClaudeModelPricing = {
 /**
  * Keyed by `claude-<family>-<major>[-<minor>]`; `normalizeModelForPricing` resolves only exact
  * keys, so a new model stays unpriced (and flagged in the UI) until its row lands here.
- * Why no `claude-haiku-5-5`: it reprices a whole request whose prompt exceeds 100K tokens, and
- * these estimates run on daily totals that cannot tell which requests crossed that line.
  */
 export const MODEL_PRICING: Record<string, ClaudeModelPricing> = {
   'claude-fable-5-1': FABLE_5_1_PRICING,
@@ -79,7 +85,7 @@ export const MODEL_PRICING: Record<string, ClaudeModelPricing> = {
     cacheRead: 0.3,
     cacheWrite: 3.75,
     cacheWrite1h: 6,
-    ...SONNET_LONG_CONTEXT_PRICING
+    longContext: SONNET_4_LONG_CONTEXT
   },
   'claude-sonnet-4': {
     input: 3,
@@ -87,10 +93,25 @@ export const MODEL_PRICING: Record<string, ClaudeModelPricing> = {
     cacheRead: 0.3,
     cacheWrite: 3.75,
     cacheWrite1h: 6,
-    ...SONNET_LONG_CONTEXT_PRICING
+    longContext: SONNET_4_LONG_CONTEXT
   },
   'claude-sonnet-3-7': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75, cacheWrite1h: 6 },
   'claude-sonnet-3-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75, cacheWrite1h: 6 },
+  'claude-haiku-5-5': {
+    input: 0.1,
+    output: 0.5,
+    cacheRead: 0.01,
+    cacheWrite: 0.125,
+    cacheWrite1h: 0.2,
+    longContext: {
+      thresholdTokens: 100_000,
+      input: 0.5,
+      output: 2.5,
+      cacheRead: 0.05,
+      cacheWrite: 0.625,
+      cacheWrite1h: 1
+    }
+  },
   'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25, cacheWrite1h: 2 },
   'claude-haiku-3-5': { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1, cacheWrite1h: 1.6 },
   'claude-haiku-3': {
@@ -138,76 +159,55 @@ export function normalizeModelForPricing(model: string | null): string | null {
   return key !== null && Object.hasOwn(MODEL_PRICING, key) ? key : null
 }
 
-function calculateTieredCost(
-  tokens: number,
-  basePrice: number,
-  abovePrice?: number,
-  threshold?: number
-): number {
-  if (threshold === undefined || abovePrice === undefined) {
-    return tokens * basePrice
+const longContextThresholdByModel = new Map<string, number | null>()
+
+function longContextThresholdTokens(model: string | null): number | null {
+  if (model === null) {
+    return null
   }
-  const belowTokens = Math.min(tokens, threshold)
-  const aboveTokens = Math.max(tokens - threshold, 0)
-  return belowTokens * basePrice + aboveTokens * abovePrice
+  let threshold = longContextThresholdByModel.get(model)
+  if (threshold === undefined) {
+    const key = normalizeModelForPricing(model)
+    threshold = key === null ? null : (MODEL_PRICING[key].longContext?.thresholdTokens ?? null)
+    longContextThresholdByModel.set(model, threshold)
+  }
+  return threshold
 }
 
-/**
- * @param cacheWriteTokens every cache write, both TTLs
- * @param cacheWrite1hTokens the 1-hour-TTL subset of `cacheWriteTokens`
- */
-export function estimateCostUsd(
+function priceTokens(rates: ClaudeTokenRates, tokens: ClaudeUsageTokenTotals): number {
+  const write1hTokens = Math.min(Math.max(tokens.cacheWrite1hTokens, 0), tokens.cacheWriteTokens)
+  return (
+    tokens.inputTokens * rates.input +
+    tokens.outputTokens * rates.output +
+    tokens.cacheReadTokens * rates.cacheRead +
+    (tokens.cacheWriteTokens - write1hTokens) * rates.cacheWrite +
+    write1hTokens * rates.cacheWrite1h
+  )
+}
+
+/** The whole turn when its prompt exceeds `model`'s long-context threshold. */
+export function longContextTurnTokens(
   model: string | null,
-  inputTokens: number,
-  outputTokens: number,
-  cacheReadTokens: number,
-  cacheWriteTokens: number,
-  cacheWrite1hTokens = 0
-): number | null {
+  turn: ClaudeUsageTokenTotals
+): ClaudeUsageTokenTotals | undefined {
+  const threshold = longContextThresholdTokens(model)
+  const prompt = turn.inputTokens + turn.cacheReadTokens + turn.cacheWriteTokens
+  return threshold !== null && prompt > threshold ? addTokenTotals(NO_TOKENS, turn) : undefined
+}
+
+export function estimateCostUsd(model: string | null, tokens: ClaudeBillableTokens): number | null {
   const normalized = normalizeModelForPricing(model)
   if (!normalized) {
     return null
   }
   const pricing = MODEL_PRICING[normalized]
-  const write1hTokens = Math.min(Math.max(cacheWrite1hTokens, 0), cacheWriteTokens)
-  // Why: both TTL buckets share one long-context allowance. Giving each its own
-  // would make a split bucket cheaper than the same tokens billed entirely at 5m.
-  const write1hShare = cacheWriteTokens > 0 ? write1hTokens / cacheWriteTokens : 0
-  const write5mThreshold =
-    pricing.thresholdTokens === undefined ? undefined : pricing.thresholdTokens * (1 - write1hShare)
-  const write1hThreshold =
-    pricing.thresholdTokens === undefined ? undefined : pricing.thresholdTokens * write1hShare
+  if (!pricing.longContext || !tokens.longContext) {
+    return priceTokens(pricing, tokens) / 1_000_000
+  }
+  const longTokens = minTokenTotals(tokens.longContext, tokens)
   return (
-    (calculateTieredCost(
-      inputTokens,
-      pricing.input,
-      pricing.inputAboveThreshold,
-      pricing.thresholdTokens
-    ) +
-      calculateTieredCost(
-        outputTokens,
-        pricing.output,
-        pricing.outputAboveThreshold,
-        pricing.thresholdTokens
-      ) +
-      calculateTieredCost(
-        cacheReadTokens,
-        pricing.cacheRead,
-        pricing.cacheReadAboveThreshold,
-        pricing.thresholdTokens
-      ) +
-      calculateTieredCost(
-        cacheWriteTokens - write1hTokens,
-        pricing.cacheWrite,
-        pricing.cacheWriteAboveThreshold,
-        write5mThreshold
-      ) +
-      calculateTieredCost(
-        write1hTokens,
-        pricing.cacheWrite1h,
-        pricing.cacheWrite1hAboveThreshold,
-        write1hThreshold
-      )) /
+    (priceTokens(pricing, addTokenTotals(tokens, longTokens, -1)) +
+      priceTokens(pricing.longContext, longTokens)) /
     1_000_000
   )
 }

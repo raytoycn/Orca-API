@@ -1,8 +1,9 @@
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../layout-owner-switch'
 import { filterRecord, omitStoredFields, withoutKey } from './stored-record-fields'
 import { canReplacePreviewContentType, partitionPinnedTabOrder } from './tab-order'
 import { getNextTerminalOrdinal } from './terminal-tab-ordinal'
 import { layoutContainsLeafId } from './terminal-pane-tree'
-import { editorTabShowsFile } from './workspace-layout-editor-tab-file'
+import { editorTabShowsFile, keptAfterEditorClose } from './workspace-layout-editor-tab-file'
 import {
   applied,
   boundPtyIds,
@@ -31,7 +32,7 @@ import {
   type WorkspaceLayoutModel
 } from './workspace-layout-model'
 import { admitsInitialSurface } from './workspace-layout-initial-surface'
-import { heldPaneOfTerminal } from './workspace-layout-terminal-adoption'
+import { adoptedLeaf, appliedHeldAdoption } from './workspace-layout-terminal-adoption'
 import { removeTabFromWorkspace, withWorkspace } from './workspace-layout-removal'
 
 type RefusedClose = NonNullable<LayoutCommandResult['refused']>[number]
@@ -44,10 +45,9 @@ export function createTerminalTab(
   if (command.initial && !admitsInitialSurface(model, command.workspace, command.initial)) {
     return applied(model)
   }
-  const held =
-    command.adopt && heldPaneOfTerminal(model.workspaces[command.workspace], command.adopt)
+  const held = command.adopt && appliedHeldAdoption(model, command.workspace, command.adopt)
   if (held) {
-    return applied(model, held)
+    return held
   }
   const workspace = workspaceOrEmpty(model, command.workspace)
   const terminals = workspace.tabs.flatMap((tab) => (tab.kind === 'terminal' ? [tab] : []))
@@ -72,7 +72,7 @@ export function createTerminalTab(
   const paneKey = paneKeyOf(id, leafId)
   if (command.adopt) {
     // Its terminal already runs: the pane binds to it and nothing starts.
-    const leaves = { ...placed.leaves, [leafId]: { ptyId: command.adopt.ptyId } }
+    const leaves = { ...placed.leaves, [leafId]: adoptedLeaf(command.adopt) }
     const adopted = withWorkspace(model, command.workspace, { ...placed, leaves })
     return applied(adopted, { tabId: id, leafId, paneKey })
   }
@@ -104,7 +104,10 @@ export function closeTab(
     next = {
       ...next,
       editorFiles: next.editorFiles.filter(
-        (file) => !editorTabShowsFile(tab.entityId, file, next.worktreeId)
+        // Why the switch: shipped builds close through this code too.
+        ORCA_LAYOUT_OWNER_IS_MAIN
+          ? keptAfterEditorClose(workspace, next, tab.entityId)
+          : (file) => !editorTabShowsFile(tab.entityId, file, next.worktreeId)
       )
     }
   }
@@ -180,13 +183,14 @@ export function renameTab(model: WorkspaceLayoutModel, command: CommandOf<'renam
   if (command.kind === 'aiVault') {
     return updateTab(model, command.workspace, { ...tab, aiVaultTitle: command.title })
   }
-  return updateTab(
-    model,
-    command.workspace,
-    command.kind === 'custom'
-      ? { ...tab, customTitle: command.title }
-      : { ...tab, generatedTitle: command.title }
-  )
+  if (command.kind === 'custom') {
+    return updateTab(model, command.workspace, { ...tab, customTitle: command.title })
+  }
+  // As the window's own generated titles: an agent's later prompt does not rename the tab.
+  if (tab.generatedTitle?.trim() && !command.replaceExisting) {
+    return refuse('generated_title_kept')
+  }
+  return updateTab(model, command.workspace, { ...tab, generatedTitle: command.title })
 }
 
 export function setTabProps(

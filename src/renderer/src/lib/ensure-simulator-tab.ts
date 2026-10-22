@@ -14,6 +14,7 @@ import { isExecutionHostAliasForWorktree } from './worktree-execution-host-alias
 import { folderWorkspaceToWorktree } from '../../../shared/folder-workspace-worktree'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../shared/layout-owner-switch'
 import { recordOpenedSimulatorTabInLayoutOwner } from './simulator-tab-layout-owner'
+import { selectFolderWorkspaces } from '@/store/workspace-record-selectors'
 
 type EnsureSimulatorTabOptions = {
   targetGroupId?: string
@@ -32,7 +33,7 @@ type ExistingSimulatorTab = {
 function getSimulatorWorktrees(state: ReturnType<typeof useAppStore.getState>, worktreeId: string) {
   return [
     ...(state.allWorktrees?.() ?? []),
-    ...(state.folderWorkspaces ?? []).map(folderWorkspaceToWorktree)
+    ...(selectFolderWorkspaces(state) ?? []).map(folderWorkspaceToWorktree)
   ].filter((worktree) => worktree.id === worktreeId)
 }
 

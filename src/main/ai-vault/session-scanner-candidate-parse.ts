@@ -11,13 +11,21 @@ import {
   type SessionParseStats
 } from './session-scanner-parse-cache'
 import { recordSessionScanIssue } from './session-scan-issues'
-import { noteSessionParseCacheListed, getSessionParseCacheEntry } from './session-parse-cache-store'
+import {
+  getSessionParseCacheEntry,
+  noteSessionParseCacheListed,
+  sessionParseCacheKey
+} from './session-parse-cache-store'
 import { describeSkippedTranscriptRecords } from './session-transcript-record-budget'
 import { canStopParsingSessions } from './session-scan-cutoff'
 import type { SessionFileCandidate, SessionParseResult } from './session-scanner-types'
 import { errorMessage } from './session-scanner-values'
 import { throwIfAiVaultScanCancelled } from './ai-vault-scan-cancellation'
-import { noteAiVaultScanFilesRead, noteAiVaultScanReading } from './ai-vault-scan-progress'
+import {
+  noteAiVaultScanFilesRead,
+  noteAiVaultScanReading,
+  noteAiVaultScanUnread
+} from './ai-vault-scan-progress'
 
 const SESSION_PARSE_CONCURRENCY = 8
 
@@ -38,8 +46,14 @@ export async function parseSessionCandidates(args: {
   const sessions = new ScannedSessionCollection()
   let nextYieldIndex = 256
   let nextCutoffIndex = 0
+  // Why: the loop alone knows what it will read, so it owns its share of the read total;
+  // a filtered walk announces each selected batch, an unfiltered pass its whole list.
+  if (!args.selectCandidate) {
+    noteAiVaultScanReading(args.signal, args.candidates.length)
+  }
 
-  for (let index = 0; index < args.candidates.length;) {
+  let index = 0
+  while (index < args.candidates.length) {
     if (index >= nextYieldIndex) {
       await yieldToEventLoop()
       nextYieldIndex = index + 256
@@ -105,13 +119,17 @@ export async function parseSessionCandidates(args: {
         (!args.admitSession || args.admitSession(result.session))
       ) {
         if (args.listed === false) {
-          noteSessionParseCacheListed(selected[resultIndex].file.path)
+          const { agent, file } = selected[resultIndex]
+          noteSessionParseCacheListed(sessionParseCacheKey(agent, file.path))
         }
         sessions.add(result.session)
       }
     })
   }
 
+  if (!args.selectCandidate) {
+    noteAiVaultScanUnread(args.signal, args.candidates.length - index)
+  }
   return [...sessions.values()]
 }
 
@@ -158,7 +176,9 @@ function skippedRecordIssue(
   candidate: SessionFileCandidate,
   executionHostId: ExecutionHostId
 ): AiVaultScanIssue | null {
-  const entry = getSessionParseCacheEntry(candidate.file.path)
+  const entry = getSessionParseCacheEntry(
+    sessionParseCacheKey(candidate.agent, candidate.file.path)
+  )
   const skipped = entry?.resume?.skippedRecords ?? entry?.skippedRecords
   const message = skipped ? describeSkippedTranscriptRecords(skipped) : null
   if (message === null) {
