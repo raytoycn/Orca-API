@@ -30,8 +30,8 @@ const env = {
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 }
 
-async function run(program, args) {
-  const child = spawnProcess({ program, args, cwd, env, stdio: 'inherit' })
+async function run(program, args, workingDirectory = cwd) {
+  const child = spawnProcess({ program, args, cwd: workingDirectory, env, stdio: 'inherit' })
   const code = await new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', resolve)
@@ -44,14 +44,11 @@ async function run(program, args) {
 if (
   !existsSync(resolve(cwd, 'config/orca-agent-engine/node_modules/@deepseek-ai/dsh/package.json'))
 ) {
-  await run('npm', [
-    'ci',
-    '--prefix',
-    'config/orca-agent-engine',
-    '--ignore-scripts',
-    '--no-audit',
-    '--no-fund'
-  ])
+  await run(
+    'npm',
+    ['ci', '--ignore-scripts', '--no-audit', '--no-fund'],
+    resolve(cwd, 'config/orca-agent-engine')
+  )
 }
 await run(process.execPath, ['config/scripts/prepare-orca-agent-engine.mjs'])
 await run(process.execPath, [pnpmCli, 'run', 'build:desktop'])
